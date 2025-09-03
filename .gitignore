@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.env.local
+.env.*
+dist/
+build/
+coverage/
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+uploads/
+.vscode/
+.idea/
+*.log
+# Local override files
+.local.env
