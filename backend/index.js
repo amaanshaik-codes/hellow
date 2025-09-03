@@ -33,8 +33,15 @@ import cors from 'cors';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+
+// Try native bcrypt first, fall back to bcryptjs (pure JS)
+let bcrypt;
+try {
+  bcrypt = (await import('bcrypt')).default;
+} catch (e) {
+  bcrypt = (await import('bcryptjs')).default;
+}
 
 const app = express();
 const server = http.createServer(app);
