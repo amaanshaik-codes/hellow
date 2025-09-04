@@ -9,6 +9,28 @@ const PROFILES = [
   { username: 'vero', displayName: 'Vero', avatar: '✨', bgColor: 'bg-purple-500' }
 ];
 
+function formatLastLogin(timestamp) {
+  if (!timestamp) return '';
+  
+  const now = new Date();
+  const loginTime = new Date(timestamp);
+  const diffMs = now - loginTime;
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  
+  return loginTime.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric',
+    ...(loginTime.getFullYear() !== now.getFullYear() && { year: 'numeric' })
+  });
+}
+
 export default function Login({ onLogin }) {
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [password, setPassword] = useState('');
@@ -157,7 +179,7 @@ export default function Login({ onLogin }) {
                       </span>
                     ) : lastLogin ? (
                       <span className="text-system-tertiaryLabel">
-                        Last login: {new Date(lastLogin).toLocaleDateString()}
+                        Last login: {formatLastLogin(lastLogin)}
                       </span>
                     ) : (
                       'Tap to sign in'

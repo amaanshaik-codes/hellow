@@ -15,8 +15,13 @@ function isValidMessage(payload) {
 
 async function getMessagesFromUpstash(room) {
   try {
+    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+      // Fallback to memory storage in development
+      return memoryStorage[room] || [];
+    }
+
     const listKey = `history:${room}`;
-    const url = `${process.env.UPSTASH_REST_URL}/lrange/${encodeURIComponent(listKey)}/0/-1`;
+    const url = `${process.env.UPSTASH_REDIS_REST_URL}/lrange/${encodeURIComponent(listKey)}/0/-1`;
     
     const response = await fetch(url, {
       headers: { 
@@ -50,8 +55,15 @@ async function getMessagesFromUpstash(room) {
 
 async function saveMessageToUpstash(room, message) {
   try {
+    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+      // Fallback to memory storage
+      if (!memoryStorage[room]) memoryStorage[room] = [];
+      memoryStorage[room].push(message);
+      return true;
+    }
+
     const listKey = `history:${room}`;
-    const url = `${process.env.UPSTASH_REST_URL}/rpush/${encodeURIComponent(listKey)}`;
+    const url = `${process.env.UPSTASH_REDIS_REST_URL}/rpush/${encodeURIComponent(listKey)}`;
     
     const response = await fetch(url, {
       method: 'POST',
@@ -90,7 +102,7 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'Access denied to this room' });
   }
 
-  const hasUpstash = process.env.UPSTASH_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN;
+  const hasUpstash = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN;
 
   if (req.method === 'GET') {
     try {
