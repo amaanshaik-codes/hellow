@@ -1,11 +1,25 @@
+# Node modules and dependencies
 node_modules
-.vscode
-.idea
+
+# Environment and configuration files
 .env.local
 .env.*
+.vscode
+.idea
 .git
 .gitignore
-README.md
-.github
+
+# Build and log files
 *.log
 uploads
+
+# Exclude duplicate frontend folder and backups
+frontend/
+untracked-backup/
+
+# Documentation (keep main README.md for deployment)
+README_NEW.md
+VERCEL_DEPLOY.md
+
+# Development files
+coverage/

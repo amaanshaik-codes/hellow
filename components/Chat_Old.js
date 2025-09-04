@@ -29,32 +29,29 @@ export default function Chat({ user, onLogout }) {
   const [context, setContext] = useState(null);
   const [infoMsg, setInfoMsg] = useState(null);
   
-  // Refs for real-time messaging
-  const lastMessageTimeRef = useRef(0);
-  
   // Refs
   const textareaRef = useRef(null);
   const viewportRef = useRef(null);
   const chatBottom = useRef(null);
 
-  // Load message history and setup real-time messaging
+  // Load message history and setup basic messaging
   useEffect(() => {
     // Load existing message history from backend on initial load
     loadMessageHistory(true);
     
     // Set user as online when component mounts
     updatePresence('online');
-
-    // Setup real-time polling using the new instant API
+    
+    // Setup real-time polling for new messages and presence
     const realtimeInterval = setInterval(() => {
-      checkForNewMessages();
-    }, 1000); // Check every 1 second for instant feel
+      pollForUpdates();
+    }, 2000); // Check every 2 seconds for real-time feel
     
     // Setup presence heartbeat to keep user online
     const heartbeatInterval = setInterval(() => {
       updatePresence('heartbeat');
     }, 15000); // Update every 15 seconds
-
+    
     // Set user offline when component unmounts
     return () => {
       clearInterval(realtimeInterval);
@@ -62,42 +59,6 @@ export default function Chat({ user, onLogout }) {
       updatePresence('offline');
     };
   }, [user.username]); // Add user.username dependency
-
-  // New instant message checking function
-  const checkForNewMessages = async () => {
-    try {
-      const room = 'ammu-vero-private-room';
-      const response = await fetch(
-        `/api/instant?room=${room}&username=${user.username}&last=${lastMessageTimeRef.current}`
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.hasNew && data.messages.length > 0) {
-          console.log(`⚡ [${user.username}] INSTANT: Got ${data.messages.length} new messages!`);
-          
-          // Add new messages immediately
-          setMessages(prev => {
-            const existingIds = new Set(prev.map(m => m.id));
-            const newMessages = data.messages.filter(m => !existingIds.has(m.id));
-            
-            if (newMessages.length > 0) {
-              console.log(`➕ [${user.username}] Adding messages:`, newMessages.map(m => `${m.username}: ${m.text}`));
-              return [...prev, ...newMessages].sort((a, b) => a.timestamp - b.timestamp);
-            }
-            return prev;
-          });
-          
-          // Update timestamp for both state and ref
-          setLastMessageTime(data.latestTimestamp);
-          lastMessageTimeRef.current = data.latestTimestamp;
-        }
-      }
-    } catch (error) {
-      console.error('❌ Instant check error:', error);
-    }
-  };
 
   // Load message history from backend
   const loadMessageHistory = async (isInitialLoad = false) => {
@@ -119,7 +80,6 @@ export default function Chat({ user, onLogout }) {
           if (history.length > 0) {
             const latestTimestamp = Math.max(...history.map(m => m.timestamp));
             setLastMessageTime(latestTimestamp);
-            lastMessageTimeRef.current = latestTimestamp;
             console.log('📅 Set lastMessageTime to:', new Date(latestTimestamp).toLocaleString());
           }
         } else {
@@ -192,6 +152,47 @@ export default function Chat({ user, onLogout }) {
   };
 
   // Poll for real-time updates (new messages + presence)
+  const pollForUpdates = async () => {
+    try {
+      const room = 'ammu-vero-private-room';
+      // Use lastMessageTime, but if it's 0, get all messages and set it properly
+      const sinceTime = lastMessageTime || 0;
+      const response = await fetch(`/api/realtime?room=${room}&since=${sinceTime}&username=${user.username}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Update messages if we got new ones
+        if (data.messages && data.messages.length > 0) {
+          console.log(`📨 Received ${data.messages.length} new messages`);
+          setMessages(prev => {
+            const existingIds = new Set(prev.map(m => m.id));
+            const newMessages = data.messages.filter(m => !existingIds.has(m.id));
+            if (newMessages.length > 0) {
+              return [...prev, ...newMessages];
+            }
+            return prev;
+          });
+          
+          // Update lastMessageTime to the latest message timestamp
+          const latestTimestamp = Math.max(...data.messages.map(m => m.timestamp));
+          setLastMessageTime(latestTimestamp);
+        } else if (lastMessageTime === 0) {
+          // If no new messages and we haven't set lastMessageTime yet, set it to now
+          // This prevents constantly checking from timestamp 0
+          setLastMessageTime(Date.now());
+        }
+        
+        // Update peer presence
+        if (data.presence) {
+          setPeerPresence(data.presence);
+        }
+      }
+    } catch (error) {
+      console.error('Real-time polling error:', error);
+    }
+  };
+
   // Save message to backend
   const saveMessageToBackend = async (message) => {
     try {
@@ -254,7 +255,7 @@ export default function Chat({ user, onLogout }) {
       replyTo: replyTo
     };
 
-    console.log(`💬 [${user.username}] Sending message with timestamp:`, newMessage.timestamp, `(${new Date(newMessage.timestamp).toLocaleString()})`);
+    console.log('💬 Sending message:', newMessage);
 
     // Clear input immediately for better UX
     setInput('');
@@ -262,11 +263,6 @@ export default function Chat({ user, onLogout }) {
     
     // Add to local state immediately
     setMessages(prev => [...prev, newMessage]);
-    
-    // Update lastMessageTime to this message's timestamp to avoid re-fetching it
-    setLastMessageTime(newMessage.timestamp);
-    lastMessageTimeRef.current = newMessage.timestamp;
-    console.log(`📅 [${user.username}] Updated lastMessageTime to sent message timestamp: ${newMessage.timestamp}`);
     
     // Save to backend in background (don't block UI)
     saveMessageToBackend(newMessage).catch(error => {
@@ -573,6 +569,15 @@ export default function Chat({ user, onLogout }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <motion.button
+              onClick={() => loadMessageHistory()}
+              className="theme-toggle-btn"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              title="Refresh messages"
+            >
+              🔄
+            </motion.button>
             <ThemeToggle />
             <Tooltip.Root>
               <Tooltip.Trigger asChild>

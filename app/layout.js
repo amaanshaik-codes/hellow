@@ -1,6 +1,5 @@
 
 import './globals.css';
-import './apple.css';
 import AppleProviders from '../components/AppleProviders';
 
 export const metadata = {
