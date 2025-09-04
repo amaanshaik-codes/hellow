@@ -2,7 +2,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Login from '../components/Login';
-import ChatWebRTC from '../components/ChatWebRTC';
+import Chat from '../components/Chat';
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -136,7 +136,7 @@ export default function Home() {
 
   return user ? (
     <>
-      <ChatWebRTC user={user} onLogout={handleLogout} />
+      <Chat user={user} onLogout={handleLogout} />
       
       {/* PWA Install Prompt */}
       {showInstallPrompt && (

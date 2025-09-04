@@ -6,6 +6,14 @@ import * as ScrollArea from '@radix-ui/react-scroll-area';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { ExitIcon } from '@radix-ui/react-icons';
 import ThemeToggle from './ThemeToggle';
+import WebRTCManager from '../lib/webrtc';
+
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import * as ScrollArea from '@radix-ui/react-scroll-area';
+import * as Tooltip from '@radix-ui/react-tooltip';
+import { ExitIcon } from '@radix-ui/react-icons';
+import ThemeToggle from './ThemeToggle';
 
 export default function Chat({ user, onLogout }) {
   // Core state
