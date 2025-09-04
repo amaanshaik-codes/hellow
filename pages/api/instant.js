@@ -1,10 +1,5 @@
 // Instant messaging API - guaranteed to work
-import { Redis } from '@upstash/redis';
-
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+import { kv } from '@vercel/kv';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -19,7 +14,7 @@ export default async function handler(req, res) {
 
   try {
     // Get all messages from room
-    const rawData = await redis.get(room);
+    const rawData = await kv.get(room);
     let allMessages = [];
 
     if (rawData) {

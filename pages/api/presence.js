@@ -1,155 +1,68 @@
-// Presence API for real-time online/offline status
-// Uses Upstash Redis for production, memory for development
-
-let memoryPresence = {}; // Development fallback
-
-async function setPresenceInUpstash(key, data, expiry = null) {
-  try {
-    if (!process.env.UPSTASH_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-      // Fallback to memory storage in development
-      memoryPresence[key] = { ...data, expiresAt: expiry ? Date.now() + expiry * 1000 : null };
-      return true;
-    }
-
-    const url = expiry 
-      ? `${process.env.UPSTASH_REST_URL}/setex/${encodeURIComponent(key)}/${expiry}/${encodeURIComponent(JSON.stringify(data))}`
-      : `${process.env.UPSTASH_REST_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(JSON.stringify(data))}`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`
-      }
-    });
-    
-    return response.ok;
-  } catch (error) {
-    console.error('Upstash set error:', error);
-    // Fallback to memory
-    memoryPresence[key] = { ...data, expiresAt: expiry ? Date.now() + expiry * 1000 : null };
-    return true;
-  }
-}
-
-async function getPresenceFromUpstash(key) {
-  try {
-    if (!process.env.UPSTASH_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-      // Fallback to memory storage
-      const data = memoryPresence[key];
-      if (!data) return null;
-      if (data.expiresAt && Date.now() > data.expiresAt) {
-        delete memoryPresence[key];
-        return null;
-      }
-      return data;
-    }
-
-    const url = `${process.env.UPSTASH_REST_URL}/get/${encodeURIComponent(key)}`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`
-      }
-    });
-    
-    if (!response.ok) return null;
-    
-    const result = await response.json();
-    return result.result ? JSON.parse(result.result) : null;
-  } catch (error) {
-    console.error('Upstash get error:', error);
-    // Fallback to memory
-    const data = memoryPresence[key];
-    if (!data) return null;
-    if (data.expiresAt && Date.now() > data.expiresAt) {
-      delete memoryPresence[key];
-      return null;
-    }
-    return data;
-  }
-}
+// User presence API - Vercel KV for real-time status tracking
+import { kv } from '@vercel/kv';
 
 export default async function handler(req, res) {
-  if (req.method === 'POST') {
-    const { username, action, lastSeen } = req.body;
-    
-    if (!username) {
-      return res.status(400).json({ error: 'Username required' });
-    }
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
 
-    try {
-      const presenceKey = `presence:${username}`;
-      
-      if (action === 'online') {
-        // Set user as online with timestamp
-        await setPresenceInUpstash(presenceKey, {
-          status: 'online',
-          lastSeen: new Date().toISOString(),
-          heartbeat: Date.now()
-        }, 30); // Expire in 30 seconds if not updated
-        
-        console.log(`👋 ${username} is now online`);
-      } else if (action === 'offline') {
-        // Set user as offline with last seen time
-        await setPresenceInUpstash(presenceKey, {
-          status: 'offline',
-          lastSeen: lastSeen || new Date().toISOString(),
-          heartbeat: Date.now()
-        });
-        
-        console.log(`👋 ${username} went offline`);
-      } else if (action === 'heartbeat') {
-        // Update heartbeat to keep online status alive
-        await setPresenceInUpstash(presenceKey, {
-          status: 'online',
-          lastSeen: new Date().toISOString(),
-          heartbeat: Date.now()
-        }, 30);
-      }
-      
-      res.status(200).json({ success: true });
-    } catch (error) {
-      console.error('Presence update error:', error);
-      res.status(500).json({ error: 'Failed to update presence' });
-    }
-  } else if (req.method === 'GET') {
-    const { username } = req.query;
-    
-    if (!username) {
-      return res.status(400).json({ error: 'Username required' });
-    }
+  const { username, room, status } = req.method === 'POST' ? req.body : req.query;
+  
+  if (!username || !room) {
+    return res.status(400).json({ error: 'Username and room required' });
+  }
 
-    try {
-      const presenceKey = `presence:${username}`;
-      const presence = await getPresenceFromUpstash(presenceKey);
+  const presenceKey = `presence:${room}`;
+
+  try {
+    if (req.method === 'POST') {
+      // Update user presence
+      const presenceStatus = status || 'online';
+      const currentTime = Date.now();
       
-      if (!presence) {
-        return res.status(200).json({
-          status: 'offline',
-          lastSeen: null
-        });
-      }
+      // Get current presence data
+      const currentPresence = await kv.get(presenceKey) || {};
       
-      // Check if heartbeat is too old (more than 45 seconds)
-      const now = Date.now();
-      const heartbeatAge = now - presence.heartbeat;
+      // Update user's presence
+      currentPresence[username] = {
+        status: presenceStatus,
+        lastSeen: currentTime,
+        updatedAt: currentTime
+      };
+
+      // Save back to KV with 1 hour expiry
+      await kv.set(presenceKey, currentPresence, { ex: 3600 });
       
-      if (heartbeatAge > 45000) {
-        // User is considered offline if heartbeat is too old
-        return res.status(200).json({
-          status: 'offline',
-          lastSeen: presence.lastSeen
-        });
-      }
+      console.log(`✅ [PRESENCE] Updated ${username} to ${presenceStatus} in ${room}`);
       
-      res.status(200).json(presence);
-    } catch (error) {
-      console.error('Get presence error:', error);
-      res.status(500).json({ error: 'Failed to get presence' });
+      return res.json({ 
+        success: true, 
+        username,
+        status: presenceStatus,
+        timestamp: currentTime
+      });
+      
+    } else if (req.method === 'GET') {
+      // Get presence for all users in room
+      const presenceData = await kv.get(presenceKey) || {};
+      
+      return res.json({
+        room,
+        presence: presenceData,
+        timestamp: Date.now()
+      });
+      
+    } else {
+      return res.status(405).json({ error: 'Method not allowed' });
     }
-  } else {
-    res.setHeader('Allow', ['GET', 'POST']);
-    res.status(405).end(`Method ${req.method} Not Allowed`);
+    
+  } catch (error) {
+    console.error('❌ [PRESENCE] Error:', error);
+    return res.status(500).json({ error: 'Failed to update presence' });
   }
 }

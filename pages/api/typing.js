@@ -1,10 +1,4 @@
-import { Redis } from '@upstash/redis';
-
-// Initialize Redis client
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+import { kv } from '@vercel/kv';
 
 export default async function handler(req, res) {
   const { method } = req;
@@ -22,7 +16,7 @@ export default async function handler(req, res) {
       
       if (isTyping) {
         // Set typing indicator with 5 second expiration
-        await redis.setex(typingKey, 5, JSON.stringify({
+        await kv.setex(typingKey, 5, JSON.stringify({
           username,
           targetUser,
           isTyping: true,
@@ -31,7 +25,7 @@ export default async function handler(req, res) {
         console.log(`⌨️  ${username} is typing to ${targetUser}`);
       } else {
         // Remove typing indicator
-        await redis.del(typingKey);
+        await kv.del(typingKey);
         console.log(`🛑 ${username} stopped typing to ${targetUser}`);
       }
 
@@ -53,7 +47,7 @@ export default async function handler(req, res) {
       const otherUser = username === 'ammu' ? 'vero' : 'ammu';
       const typingKey = `typing:${username}:from:${otherUser}`;
       
-      const typingData = await redis.get(typingKey);
+      const typingData = await kv.get(typingKey);
       
       if (typingData) {
         const parsedData = typeof typingData === 'string' ? JSON.parse(typingData) : typingData;

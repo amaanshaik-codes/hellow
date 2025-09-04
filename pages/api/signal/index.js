@@ -1,32 +1,16 @@
 // WebRTC signaling server for P2P connection setup
-// Stores temporary signaling data in Upstash Redis
+// Stores temporary signaling data in Vercel KV
+import { kv } from '@vercel/kv';
 
 let memorySignals = {}; // Development fallback
 
-async function saveToUpstash(key, payload, ttlSeconds = 300) {
+async function saveToKV(key, payload, ttlSeconds = 300) {
   try {
-    const url = `${process.env.UPSTASH_REST_URL}/set/${encodeURIComponent(key)}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 
-        Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ 
-        value: JSON.stringify(payload), 
-        ex: ttlSeconds 
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Upstash save error:', response.status, errorText);
-      return false;
-    }
-
+    const signalKey = `signal:${key}`;
+    await kv.set(signalKey, payload, { ex: ttlSeconds });
     return true;
   } catch (error) {
-    console.error('Failed to save to Upstash:', error);
+    console.error('Failed to save to Vercel KV:', error);
     return false;
   }
 }
@@ -47,17 +31,23 @@ export default async function handler(req, res) {
     // Generate unique signal ID if not provided
     const signalId = id || `sig:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 
-    const hasUpstash = process.env.UPSTASH_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN;
-
-    if (hasUpstash) {
-      const saved = await saveToUpstash(signalId, payload, ttlSeconds);
+    // Always try Vercel KV first
+    try {
+      const saved = await saveToKV(signalId, payload, ttlSeconds);
       if (!saved) {
-        return res.status(500).json({ 
-          error: 'Failed to save signaling data',
-          fallback: true
-        });
+        throw new Error('KV save returned false');
       }
-    } else {
+      
+      res.json({ 
+        success: true,
+        id: signalId,
+        expiresIn: ttlSeconds,
+        storage: 'vercel-kv'
+      });
+      
+    } catch (kvError) {
+      console.warn('🚨 [SIGNAL] Vercel KV unavailable, using memory fallback:', kvError.message);
+      
       // Development fallback - use memory storage with TTL simulation
       memorySignals[signalId] = {
         payload,
@@ -68,14 +58,14 @@ export default async function handler(req, res) {
       setTimeout(() => {
         delete memorySignals[signalId];
       }, ttlSeconds * 1000);
-    }
 
-    res.json({ 
-      success: true,
-      id: signalId,
-      expiresIn: ttlSeconds,
-      storage: hasUpstash ? 'redis' : 'memory'
-    });
+      res.json({ 
+        success: true,
+        id: signalId,
+        expiresIn: ttlSeconds,
+        storage: 'memory-fallback'
+      });
+    }
 
   } catch (error) {
     console.error('Signal creation error:', error);

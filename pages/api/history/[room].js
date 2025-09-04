@@ -1,7 +1,6 @@
 // Secure chat history API for Ammu & Vero's private chat
-// Stores messages in Upstash Redis for production, memory for development
-
-let memoryStorage = {}; // Development fallback
+// Uses Vercel KV for unified storage with messages/store.js
+import { kv } from '@vercel/kv';
 
 function isValidMessage(payload) {
   return payload && 
@@ -13,80 +12,46 @@ function isValidMessage(payload) {
          ['ammu', 'vero'].includes(payload.username.toLowerCase());
 }
 
-async function getMessagesFromUpstash(room) {
+async function getMessagesFromKV(room) {
   try {
-    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-      // Fallback to memory storage in development
-      return memoryStorage[room] || [];
-    }
-
-    const listKey = `history:${room}`;
-    const url = `${process.env.UPSTASH_REDIS_REST_URL}/lrange/${encodeURIComponent(listKey)}/0/-1`;
+    const roomKey = `messages:${room}`;
+    const messages = await kv.get(roomKey) || [];
     
-    const response = await fetch(url, {
-      headers: { 
-        Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` 
-      }
-    });
-
-    if (!response.ok) {
-      console.error('Upstash error:', response.status, response.statusText);
-      return [];
-    }
-
-    const data = await response.json();
-    const messages = (data.result || [])
-      .map(item => {
-        try {
-          return JSON.parse(item);
-        } catch {
-          return null;
-        }
-      })
+    // Ensure all messages are valid and properly sorted
+    const validMessages = messages
       .filter(msg => msg && isValidMessage(msg))
-      .sort((a, b) => a.timestamp - b.timestamp); // Ensure chronological order
+      .sort((a, b) => a.timestamp - b.timestamp);
 
-    return messages;
+    console.log(`📖 [HISTORY] Loaded ${validMessages.length} messages from KV for room: ${room}`);
+    return validMessages;
   } catch (error) {
-    console.error('Failed to fetch from Upstash:', error);
+    console.error('Failed to fetch from Vercel KV:', error);
     return [];
   }
 }
 
-async function saveMessageToUpstash(room, message) {
+async function saveMessageToKV(room, message) {
   try {
-    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-      // Fallback to memory storage
-      if (!memoryStorage[room]) memoryStorage[room] = [];
-      memoryStorage[room].push(message);
-      return true;
-    }
-
-    const listKey = `history:${room}`;
-    const url = `${process.env.UPSTASH_REDIS_REST_URL}/rpush/${encodeURIComponent(listKey)}`;
+    const roomKey = `messages:${room}`;
+    const messages = await kv.get(roomKey) || [];
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 
-        Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ 
-        value: JSON.stringify(message) 
-      })
-    });
-
-    if (!response.ok) {
-      console.error('Failed to save to Upstash:', response.status);
-      return false;
-    }
-
+    // Add new message
+    messages.push(message);
+    
+    // Keep only recent 1000 messages
+    const recentMessages = messages.slice(-1000);
+    
+    await kv.set(roomKey, recentMessages);
+    console.log(`💾 [HISTORY] Saved message to KV for room: ${room}`);
     return true;
   } catch (error) {
-    console.error('Upstash save error:', error);
+    console.error('KV save error:', error);
     return false;
   }
 }
+
+// Development fallback - in-memory storage
+const memoryStorage = {};
 
 export default async function handler(req, res) {
   const { room } = req.query;
@@ -102,15 +67,15 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'Access denied to this room' });
   }
 
-  const hasUpstash = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN;
-
   if (req.method === 'GET') {
     try {
       let messages = [];
       
-      if (hasUpstash) {
-        messages = await getMessagesFromUpstash(room);
-      } else {
+      // Always try Vercel KV first
+      try {
+        messages = await getMessagesFromKV(room);
+      } catch (kvError) {
+        console.warn('🚨 [HISTORY] Vercel KV unavailable, using memory fallback:', kvError.message);
         // Development fallback - use memory storage
         messages = memoryStorage[room] || [];
       }
@@ -136,12 +101,14 @@ export default async function handler(req, res) {
       // Add server timestamp for verification
       message.serverTimestamp = Date.now();
 
-      if (hasUpstash) {
-        const saved = await saveMessageToUpstash(room, message);
+      // Always try Vercel KV first
+      try {
+        const saved = await saveMessageToKV(room, message);
         if (!saved) {
-          return res.status(500).json({ error: 'Failed to save message' });
+          throw new Error('KV save returned false');
         }
-      } else {
+      } catch (kvError) {
+        console.warn('🚨 [HISTORY] Vercel KV unavailable, using memory fallback:', kvError.message);
         // Development fallback
         if (!memoryStorage[room]) {
           memoryStorage[room] = [];

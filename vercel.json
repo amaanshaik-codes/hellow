@@ -1,0 +1,26 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
+  "functions": {
+    "pages/api/**/*.js": {
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/realtime-sse",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Connection",
+          "value": "keep-alive"
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { kv } from '@vercel/kv';
 
 // Exclusive profiles for Ammu and Vero
 const AUTHORIZED_USERS = {
@@ -93,19 +94,20 @@ export default async function handler(req, res) {
 
     const token = signPayload(tokenPayload, jwtSecret);
 
-    // Record login time
+    // Record login time directly to KV
     try {
-      await fetch(`${req.headers.origin || 'http://localhost:3000'}/api/stats`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: validation.user.username,
-          action: 'login',
-          timestamp: new Date().toISOString()
-        })
-      });
+      const statsKey = `stats:${validation.user.username}`;
+      const loginTime = Date.now();
+      
+      await kv.set(statsKey, {
+        username: validation.user.username,
+        lastLogin: loginTime,
+        lastActivity: loginTime,
+        totalLogins: (await kv.get(`${statsKey}:logins`) || 0) + 1
+      }, { ex: 86400 * 30 }); // 30 days expiry
+      
     } catch (error) {
-      console.log('Failed to record login time:', error.message);
+      console.log('Failed to record login time:', error);
     }
 
     // Successful authentication

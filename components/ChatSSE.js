@@ -6,24 +6,22 @@ import * as ScrollArea from '@radix-ui/react-scroll-area';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { ExitIcon } from '@radix-ui/react-icons';
 import ThemeToggle from './ThemeToggle';
-import WebRTCManager from '../lib/webrtc';
+import SSEManager from '../lib/sseManager';
 
 export default function Chat({ user, onLogout }) {
   // Core state
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [peer, setPeer] = useState(null);
-  const [presence, setPresence] = useState({});
   const [receipts, setReceipts] = useState({});
   const [unreadIds, setUnreadIds] = useState(new Set());
   const [firstUnreadId, setFirstUnreadId] = useState(null);
   
   // Real-time state
   const [isOnline, setIsOnline] = useState(true);
-  const [peerPresence, setPeerPresence] = useState({ status: 'offline', lastSeen: null, direct: false });
-  const [lastMessageTime, setLastMessageTime] = useState(0);
+  const [peerPresence, setPeerPresence] = useState({ status: 'offline', lastSeen: null });
   const [isTyping, setIsTyping] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
+  const [connectionQuality, setConnectionQuality] = useState('good');
   
   // UI state
   const [editing, setEditing] = useState({ id: null, text: '' });
@@ -31,9 +29,8 @@ export default function Chat({ user, onLogout }) {
   const [context, setContext] = useState(null);
   const [infoMsg, setInfoMsg] = useState(null);
   
-  // Refs for real-time messaging
-  const lastMessageTimeRef = useRef(0);
-  const webrtcManagerRef = useRef(null);
+  // SSE Manager
+  const sseManagerRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   
   // Refs
@@ -41,300 +38,148 @@ export default function Chat({ user, onLogout }) {
   const viewportRef = useRef(null);
   const chatBottom = useRef(null);
 
-  // Load message history and setup real-time messaging
-  useEffect(() => {
-    // Load existing message history from backend on initial load
-    loadMessageHistory(true);
-    
-    // Set user as online when component mounts
-    updatePresence('online');
-
-    // Setup real-time polling using the new instant API
-    const realtimeInterval = setInterval(() => {
-      checkForNewMessages();
-      checkPresenceUpdates(); // Also check for presence updates
-    }, 1000); // Check every 1 second for instant feel
-    
-    // Setup presence heartbeat to keep user online
-    const heartbeatInterval = setInterval(() => {
-      updatePresence('heartbeat');
-    }, 15000); // Update every 15 seconds
-
-    // Set user offline when component unmounts
-    return () => {
-      clearInterval(realtimeInterval);
-      clearInterval(heartbeatInterval);
-      updatePresence('offline');
-    };
-  }, [user.username]); // Add user.username dependency
-
-  // Initialize WebRTC manager for P2P communication
+  // Initialize SSE Manager
   useEffect(() => {
     const roomId = process.env.NEXT_PUBLIC_WS_ROOM || 'ammu-vero-private-room';
     
-    const handleWebRTCMessage = (messageData) => {
-      console.log('📨 Received WebRTC P2P message:', messageData);
+    console.log(`🚀 [Chat] Initializing SSE Manager for ${user.username}`);
+    
+    // Create SSE manager with advanced configuration
+    sseManagerRef.current = new SSEManager(user.username, roomId, {
+      maxReconnectAttempts: 15,
+      reconnectDelay: 1000,
+      maxReconnectDelay: 30000,
+      heartbeatTimeout: 60000,
+      messageTimeout: 10000,
+      bufferSize: 200
+    });
+    
+    // Set up message handler
+    sseManagerRef.current.setMessageHandler((newMessages) => {
+      console.log(`📨 [Chat] Received ${newMessages.length} new messages via SSE`);
       
-      // Add message to UI immediately
       setMessages(prev => {
-        const exists = prev.find(m => m.id === messageData.id);
-        if (exists) return prev;
+        const existingIds = new Set(prev.map(m => m.id));
+        const messagesToAdd = newMessages.filter(msg => !existingIds.has(msg.id));
         
-        const newMessage = {
-          ...messageData,
-          timestamp: messageData.timestamp || Date.now(),
-          isDirect: true // Mark as P2P message
-        };
+        if (messagesToAdd.length === 0) return prev;
         
-        return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+        const updated = [...prev, ...messagesToAdd].sort((a, b) => a.timestamp - b.timestamp);
+        
+        // Mark new messages as unread if from other user
+        const otherUserMessages = messagesToAdd.filter(msg => msg.username !== user.username);
+        if (otherUserMessages.length > 0) {
+          setUnreadIds(prevUnread => {
+            const newUnreadIds = new Set(prevUnread);
+            otherUserMessages.forEach(msg => newUnreadIds.add(msg.id));
+            return newUnreadIds;
+          });
+          
+          if (!firstUnreadId && otherUserMessages.length > 0) {
+            setFirstUnreadId(otherUserMessages[0].id);
+          }
+        }
+        
+        return updated;
       });
       
-      // Update last message time
-      lastMessageTimeRef.current = Math.max(lastMessageTimeRef.current, messageData.timestamp || Date.now());
-      
-      // Scroll to bottom
+      // Auto-scroll to bottom
       setTimeout(() => {
         chatBottom.current?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
-    };
+    });
     
-    const handleWebRTCPresence = (presenceData) => {
-      console.log('👥 WebRTC Presence update:', presenceData);
-      setPeerPresence(prev => ({
-        ...prev,
-        ...presenceData
-      }));
+    // Set up presence handler
+    sseManagerRef.current.setPresenceHandler((presenceData) => {
+      console.log(`👥 [Chat] Presence update:`, presenceData);
       
-      if (presenceData.status === 'online' && presenceData.direct) {
-        setConnectionStatus('connected');
-      } else if (presenceData.status === 'offline') {
-        setConnectionStatus('disconnected');
+      if (presenceData.presence) {
+        // Update peer presence based on other user
+        const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
+        const otherUserPresence = presenceData.presence[otherUser];
+        
+        if (otherUserPresence) {
+          setPeerPresence({
+            status: otherUserPresence.status,
+            lastSeen: otherUserPresence.lastSeen,
+            lastActive: otherUserPresence.lastActive
+          });
+        }
       }
-    };
+    });
     
-    const handleWebRTCTyping = (typingData) => {
-      console.log('⌨️ WebRTC Typing update:', typingData);
-      setIsTyping(typingData.isTyping);
+    // Set up typing handler
+    sseManagerRef.current.setTypingHandler((typingData) => {
+      console.log(`⌨️ [Chat] Typing update:`, typingData);
       
-      // Auto-clear typing indicator after 3 seconds
-      if (typingData.isTyping) {
-        clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = setTimeout(() => {
-          setIsTyping(false);
-        }, 3000);
+      if (typingData.username !== user.username) {
+        setIsTyping(typingData.isTyping);
+        
+        // Auto-clear typing indicator after 4 seconds
+        if (typingData.isTyping) {
+          clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = setTimeout(() => {
+            setIsTyping(false);
+          }, 4000);
+        }
       }
-    };
+    });
     
-    // Initialize WebRTC manager
-    try {
-      webrtcManagerRef.current = new WebRTCManager(
-        user.username,
-        roomId,
-        handleWebRTCMessage,
-        handleWebRTCPresence,
-        handleWebRTCTyping
-      );
-      console.log('✅ WebRTC Manager initialized');
-    } catch (error) {
-      console.error('❌ WebRTC initialization failed:', error);
-      setConnectionStatus('fallback');
-    }
+    // Set up connection handler
+    sseManagerRef.current.setConnectionHandler((statusInfo) => {
+      console.log(`🔄 [Chat] Connection status:`, statusInfo);
+      
+      setConnectionStatus(statusInfo.isConnected ? 'connected' : 
+                         statusInfo.status === 'error' ? 'error' :
+                         statusInfo.status === 'timeout' ? 'timeout' :
+                         statusInfo.status === 'failed' ? 'failed' : 'disconnected');
+      
+      setConnectionQuality(statusInfo.quality);
+      setIsOnline(statusInfo.isConnected);
+    });
+    
+    // Load initial message history
+    loadInitialMessages();
     
     // Cleanup on unmount
     return () => {
-      if (webrtcManagerRef.current) {
-        webrtcManagerRef.current.destroy();
+      if (sseManagerRef.current) {
+        sseManagerRef.current.destroy();
       }
       clearTimeout(typingTimeoutRef.current);
     };
   }, [user.username]);
 
-  // New instant message checking function
-  const checkForNewMessages = async () => {
+  // Load initial message history
+  const loadInitialMessages = async () => {
     try {
-      const room = process.env.NEXT_PUBLIC_WS_ROOM || 'ammu-vero-private-room';
-      const lastTimestamp = lastMessageTimeRef.current;
-      console.log(`🔍 [${user.username}] Checking for messages since timestamp: ${lastTimestamp} (${new Date(lastTimestamp).toLocaleString()})`);
+      const history = await sseManagerRef.current?.getMessageHistory(100);
       
-      const response = await fetch(
-        `/api/instant?room=${room}&username=${user.username}&last=${lastTimestamp}`
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`📥 [${user.username}] Instant API response:`, data);
+      if (history && history.length > 0) {
+        console.log(`📚 [Chat] Loaded ${history.length} historical messages`);
+        setMessages(history);
         
-        if (data.hasNew && data.messages.length > 0) {
-          console.log(`⚡ [${user.username}] INSTANT: Got ${data.messages.length} new messages!`);
-          
-          // Add new messages immediately
-          setMessages(prev => {
-            const existingIds = new Set(prev.map(m => m.id));
-            const newMessages = data.messages.filter(m => !existingIds.has(m.id));
-            
-            if (newMessages.length > 0) {
-              console.log(`➕ [${user.username}] Adding messages:`, newMessages.map(m => `${m.username}: ${m.text}`));
-              return [...prev, ...newMessages].sort((a, b) => a.timestamp - b.timestamp);
-            }
-            return prev;
-          });
-          
-          // Update timestamp for both state and ref
-          setLastMessageTime(data.latestTimestamp);
-          lastMessageTimeRef.current = data.latestTimestamp;
-          console.log(`📅 [${user.username}] Updated lastMessageTime to: ${data.latestTimestamp}`);
-        }
-      } else {
-        console.error(`❌ [${user.username}] Instant API error: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('❌ Instant check error:', error);
-    }
-  };
-
-  // Check for presence updates and typing indicators
-  const checkPresenceUpdates = async () => {
-    try {
-      const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
-      
-      // Check presence
-      const presenceResponse = await fetch(`/api/presence?username=${otherUser}`);
-      if (presenceResponse.ok) {
-        const presenceData = await presenceResponse.json();
-        setPeerPresence({
-          status: presenceData.status || 'offline',
-          lastSeen: presenceData.lastSeen
-        });
-      }
-      
-      // Check typing status
-      const typingResponse = await fetch(`/api/typing?username=${user.username}`);
-      if (typingResponse.ok) {
-        const typingData = await typingResponse.json();
-        setIsTyping(typingData.isTyping || false);
-      }
-    } catch (error) {
-      console.error('❌ Presence/Typing check error:', error);
-    }
-  };
-
-  // Load message history from backend
-  const loadMessageHistory = async (isInitialLoad = false) => {
-    try {
-      const room = process.env.NEXT_PUBLIC_WS_ROOM || 'ammu-vero-private-room';
-      console.log('Loading messages from room:', room);
-      const response = await fetch(`/api/history/${room}`);
-      
-      console.log('Response status:', response.status);
-      if (response.ok) {
-        const history = await response.json();
-        console.log('Loaded messages:', history);
+        // Mark messages from other user as unread based on last read time
+        const lastReadKey = `hellow_last_read_${user.username}`;
+        const lastRead = localStorage.getItem(lastReadKey);
+        const lastReadTime = lastRead ? parseInt(lastRead) : 0;
         
-        if (isInitialLoad) {
-          // On initial load, set messages directly
-          setMessages(history);
-          
-          // Set lastMessageTime to the latest message timestamp to avoid re-fetching
-          if (history.length > 0) {
-            const latestTimestamp = Math.max(...history.map(m => m.timestamp));
-            setLastMessageTime(latestTimestamp);
-            lastMessageTimeRef.current = latestTimestamp;
-            console.log('📅 Set lastMessageTime to:', new Date(latestTimestamp).toLocaleString());
-          }
-        } else {
-          // On manual refresh, merge with existing messages (don't overwrite)
-          setMessages(prev => {
-            const existingIds = new Set(prev.map(m => m.id));
-            const newMessages = history.filter(m => !existingIds.has(m.id));
-            
-            if (newMessages.length > 0) {
-              console.log(`🔄 Manual refresh found ${newMessages.length} new messages`);
-              return [...prev, ...newMessages].sort((a, b) => a.timestamp - b.timestamp);
-            } else {
-              console.log('🔄 Manual refresh: No new messages found, keeping existing messages');
-              return prev; // Keep existing messages
-            }
-          });
+        const otherUserMessages = history.filter(msg => 
+          msg.username !== user.username && 
+          msg.timestamp > lastReadTime
+        );
+        
+        if (otherUserMessages.length > 0) {
+          const unreadIds = new Set(otherUserMessages.map(msg => msg.id));
+          setUnreadIds(unreadIds);
+          setFirstUnreadId(otherUserMessages[0].id);
         }
         
-        // Mark messages from other user as unread if this is first load
-        if (isInitialLoad) {
-          const lastReadKey = `hellow_last_read_${user.username}`;
-          const lastRead = localStorage.getItem(lastReadKey);
-          const lastReadTime = lastRead ? parseInt(lastRead) : 0;
-          
-          const otherUserMessages = history.filter(msg => 
-            msg.username !== user.username && 
-            msg.timestamp > lastReadTime
-          );
-          
-          if (otherUserMessages.length > 0) {
-            const unreadIds = new Set(otherUserMessages.map(msg => msg.id));
-            setUnreadIds(unreadIds);
-            setFirstUnreadId(otherUserMessages[0].id);
-          }
-          
-          // Mark as read when entering chat
-          localStorage.setItem(lastReadKey, Date.now().toString());
-        }
-      } else {
-        console.error('Failed to load messages:', response.status, response.statusText);
+        // Mark as read when entering chat
+        localStorage.setItem(lastReadKey, Date.now().toString());
       }
     } catch (error) {
-      console.error('Failed to load message history:', error);
-    }
-  };
-
-  // Update user presence (online/offline/heartbeat)
-  const updatePresence = async (action) => {
-    try {
-      await fetch('/api/presence', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: user.username,
-          action,
-          lastSeen: new Date().toISOString()
-        })
-      });
-      
-      if (action === 'online') {
-        setIsOnline(true);
-        console.log(`🟢 ${user.username} is now online`);
-      } else if (action === 'offline') {
-        setIsOnline(false);
-        console.log(`🔴 ${user.username} went offline`);
-      }
-    } catch (error) {
-      console.error('Failed to update presence:', error);
-    }
-  };
-
-  // Poll for real-time updates (new messages + presence)
-  // Save message to backend
-  const saveMessageToBackend = async (message) => {
-    try {
-      const room = process.env.NEXT_PUBLIC_WS_ROOM || 'ammu-vero-private-room'; // Use environment variable
-      console.log('Saving message to room:', room, message);
-      const response = await fetch(`/api/history/${room}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(message)
-      });
-      
-      console.log('Save response status:', response.status);
-      if (!response.ok) {
-        console.error('Failed to save message to backend:', response.status, response.statusText);
-        const errorData = await response.text();
-        console.error('Error details:', errorData);
-      } else {
-        const result = await response.json();
-        console.log('Message saved successfully:', result);
-      }
-    } catch (error) {
-      console.error('Error saving message:', error);
+      console.error('❌ [Chat] Failed to load initial messages:', error);
     }
   };
 
@@ -355,68 +200,33 @@ export default function Chat({ user, onLogout }) {
 
   // Handle typing indicators
   const handleTyping = useCallback(() => {
-    // Try WebRTC first
-    if (webrtcManagerRef.current) {
-      try {
-        webrtcManagerRef.current.sendTyping(true);
-        console.log('⌨️ Typing indicator sent via WebRTC');
-      } catch (error) {
-        console.error('❌ WebRTC typing failed:', error);
-      }
+    if (sseManagerRef.current) {
+      sseManagerRef.current.sendTyping(true);
     }
-    
-    // Fallback to server API
-    const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
-    fetch('/api/typing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: user.username,
-        targetUser: otherUser,
-        isTyping: true
-      })
-    }).catch(err => console.error('Typing indicator fallback error:', err));
     
     // Clear typing indicator after 3 seconds of no typing
     clearTimeout(window.typingTimeout);
     window.typingTimeout = setTimeout(() => {
-      // Stop typing via WebRTC
-      if (webrtcManagerRef.current) {
-        try {
-          webrtcManagerRef.current.sendTyping(false);
-        } catch (error) {
-          console.error('❌ WebRTC typing stop failed:', error);
-        }
+      if (sseManagerRef.current) {
+        sseManagerRef.current.sendTyping(false);
       }
-      
-      // Fallback to server API
-      fetch('/api/typing', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: user.username,
-          targetUser: otherUser,
-          isTyping: false
-        })
-      }).catch(err => console.error('Typing stop fallback error:', err));
     }, 3000);
-  }, [user.username]);
+  }, []);
 
-  // Message sending with backend persistence
+  // Message sending with SSE
   const sendMessage = useCallback(async (e) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || !sseManagerRef.current) return;
 
     const newMessage = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`, // More unique ID
+      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       text: input.trim(),
       username: user.username,
       timestamp: Date.now(),
-      replyTo: replyTo,
-      isDirect: false // Will be set to true if sent via WebRTC
+      replyTo: replyTo
     };
 
-    console.log(`💬 [${user.username}] Sending message with timestamp:`, newMessage.timestamp, `(${new Date(newMessage.timestamp).toLocaleString()})`);
+    console.log(`💬 [Chat] Sending message via SSE:`, newMessage.text);
 
     // Clear input immediately for better UX
     setInput('');
@@ -425,67 +235,36 @@ export default function Chat({ user, onLogout }) {
     // Add to local state immediately (optimistic update)
     setMessages(prev => [...prev, newMessage]);
     
-    // Update lastMessageTime to this message's timestamp to avoid re-fetching it
-    setLastMessageTime(newMessage.timestamp);
-    lastMessageTimeRef.current = newMessage.timestamp;
-    console.log(`📅 [${user.username}] Updated lastMessageTime to sent message timestamp: ${newMessage.timestamp}`);
-    
-    // Try WebRTC first
-    let sentViaWebRTC = false;
-    if (webrtcManagerRef.current) {
-      try {
-        sentViaWebRTC = webrtcManagerRef.current.sendMessage(newMessage);
-        if (sentViaWebRTC) {
-          console.log('✅ Message sent via WebRTC P2P');
-          // Update message to mark as direct
-          setMessages(prev => prev.map(msg => 
-            msg.id === newMessage.id ? { ...msg, isDirect: true } : msg
-          ));
-        }
-      } catch (error) {
-        console.error('❌ WebRTC send failed:', error);
-      }
-    }
-    
-    // If WebRTC failed, use server fallback
-    if (!sentViaWebRTC) {
-      console.log('📡 Using server fallback for message delivery');
-      try {
-        // Try new Vercel KV storage first
-        const kvResponse = await fetch('/api/messages/store', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${user.token}`
-          },
-          body: JSON.stringify({
-            text: newMessage.text,
-            roomId: process.env.NEXT_PUBLIC_WS_ROOM || 'ammu-vero-private-room',
-            isDirect: false,
-            replyTo: newMessage.replyTo
-          })
-        });
+    // Send via SSE Manager
+    try {
+      const result = await sseManagerRef.current.sendMessage(newMessage);
+      
+      if (result.success) {
+        console.log(`✅ [Chat] Message sent successfully`);
         
-        if (kvResponse.ok) {
-          console.log('✅ Message sent via Vercel KV fallback');
-        } else {
-          // Final fallback to original backend
-          await saveMessageToBackend(newMessage);
-          console.log('✅ Message sent via original backend fallback');
-        }
-      } catch (error) {
-        console.error('❌ All message delivery methods failed:', error);
-        // Keep message in UI but mark as failed
+        // Set up delivery tracking
+        sseManagerRef.current.onMessageDelivery(newMessage.id, (status) => {
+          console.log(`📬 [Chat] Message ${newMessage.id} delivery status: ${status}`);
+          setReceipts(prev => ({ ...prev, [newMessage.id]: status }));
+        });
+      } else {
+        console.error(`❌ [Chat] Failed to send message:`, result.error);
+        
+        // Mark message as failed in UI
         setMessages(prev => prev.map(msg => 
           msg.id === newMessage.id ? { ...msg, failed: true } : msg
         ));
       }
+    } catch (error) {
+      console.error(`❌ [Chat] Message send error:`, error);
+      
+      // Mark message as failed
+      setMessages(prev => prev.map(msg => 
+        msg.id === newMessage.id ? { ...msg, failed: true } : msg
+      ));
     }
     
-    // Update unread count for other user
-    updateUnreadCount();
-    
-    // Mark last read time for current user
+    // Mark messages as read for current user
     const lastReadKey = `hellow_last_read_${user.username}`;
     localStorage.setItem(lastReadKey, Date.now().toString());
     
@@ -495,41 +274,52 @@ export default function Chat({ user, onLogout }) {
     }, 100);
   }, [input, user.username, replyTo]);
 
-  // Update unread count for the other user
-  const updateUnreadCount = () => {
-    const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
-    const currentUnread = JSON.parse(localStorage.getItem(`hellow_unread_${otherUser}`) || '[]');
-    const newUnreadId = Date.now().toString();
-    const updatedUnread = [...currentUnread, newUnreadId];
-    localStorage.setItem(`hellow_unread_${otherUser}`, JSON.stringify(updatedUnread));
-  };
-
   // Mark messages as read
-  const markMessagesAsRead = () => {
+  const markMessagesAsRead = useCallback(async () => {
     setUnreadIds(new Set());
     setFirstUnreadId(null);
     
     const lastReadKey = `hellow_last_read_${user.username}`;
-    localStorage.setItem(lastReadKey, Date.now().toString());
+    const currentTime = Date.now();
+    localStorage.setItem(lastReadKey, currentTime.toString());
     
-    // Clear unread count for current user
-    localStorage.removeItem(`hellow_unread_${user.username}`);
-  };
-
-  // Manual refresh only - no auto-refresh to prevent message loss
-  // useEffect(() => {
-  //   const interval = setInterval(() => {
-  //     console.log('Auto-refreshing messages...');
-  //     loadMessageHistory();
-  //   }, 30000);
-  //   
-  //   return () => clearInterval(interval);
-  // }, []);
-
-  // Mark messages as read when component mounts
-  useEffect(() => {
-    markMessagesAsRead();
-  }, []);
+    // **NOTIFICATION FIX**: Call API to mark messages as read and update read receipts
+    try {
+      const roomId = process.env.NEXT_PUBLIC_WS_ROOM || 'ammu-vero-private-room';
+      
+      // Get token for authentication
+      const token = localStorage.getItem('hellow_token');
+      if (!token) return;
+      
+      // Mark all messages as read by updating last read time
+      const response = await fetch('/api/messages/read', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          roomId: roomId,
+          lastReadTime: currentTime,
+          markAllAsRead: true
+        })
+      });
+      
+      if (response.ok) {
+        console.log(`✅ [Chat] Marked all messages as read for ${user.username}`);
+        
+        // **NOTIFICATION CLEAR**: Send SSE notification that messages were read
+        if (sseManagerRef.current) {
+          // Send read receipt update via SSE
+          sseManagerRef.current.sendReadReceipt(roomId, currentTime);
+        }
+      } else {
+        console.warn(`⚠️ [Chat] Failed to mark messages as read via API: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('❌ [Chat] Error marking messages as read:', error);
+    }
+  }, [user.username]);
 
   // Message actions
   const handleEdit = useCallback((messageId) => {
@@ -542,7 +332,6 @@ export default function Chat({ user, onLogout }) {
 
   const saveEdit = useCallback(async () => {
     if (editing.id && editing.text.trim()) {
-      // Double-check that user can only edit their own messages
       const msg = messages.find(m => m.id === editing.id);
       if (msg && msg.username === user.username) {
         const updatedMessage = { ...msg, text: editing.text.trim(), edited: true };
@@ -552,8 +341,10 @@ export default function Chat({ user, onLogout }) {
           m.id === editing.id ? updatedMessage : m
         ));
         
-        // Save to backend
-        await saveMessageToBackend(updatedMessage);
+        // Send updated message via SSE
+        if (sseManagerRef.current) {
+          await sseManagerRef.current.sendMessage(updatedMessage);
+        }
       }
     }
     setEditing({ id: null, text: '' });
@@ -564,61 +355,45 @@ export default function Chat({ user, onLogout }) {
   }, []);
 
   const handleDelete = useCallback(async (messageId) => {
-    // Only allow users to delete their own messages
     const msg = messages.find(m => m.id === messageId);
     if (msg && msg.username === user.username) {
       // Update local state
       setMessages(prev => prev.filter(m => m.id !== messageId));
-      
-      // Note: For now, just remove from local state
-      // Backend deletion would require additional API endpoint
     }
   }, [messages, user.username]);
 
-  // Context menu positioned next to clicked bubble
+  // Context menu
   const openContext = useCallback((e, messageId) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // Get the bubble element that was right-clicked
     const bubbleElement = e.currentTarget;
     const bubbleRect = bubbleElement.getBoundingClientRect();
     const chatCard = document.querySelector('.chat-card');
     const chatRect = chatCard.getBoundingClientRect();
     
-    // Convert to relative positioning within chat card
     const relativeX = bubbleRect.left - chatRect.left;
     const relativeY = bubbleRect.top - chatRect.top;
     
-    // Context menu dimensions
     const menuWidth = 110;
     const menuHeight = 120;
-    
-    // Determine if this is user's message (right side) or peer's message (left side)
     const isUserMessage = bubbleElement.dataset.owner === 'me';
     
     let x, y;
     
     if (isUserMessage) {
-      // User's messages (right side) - place menu to the left of bubble
       x = relativeX - menuWidth - 10;
-      // If goes off left edge, place to the right
       if (x < 10) {
         x = relativeX + bubbleRect.width + 10;
       }
     } else {
-      // Peer's messages (left side) - place menu to the right of bubble
       x = relativeX + bubbleRect.width + 10;
-      // If goes off right edge, place to the left
       if (x + menuWidth > chatRect.width - 10) {
         x = relativeX - menuWidth - 10;
       }
     }
     
-    // Position vertically aligned with bubble top
     y = relativeY;
-    
-    // Keep menu within chat bounds vertically
     if (y + menuHeight > chatRect.height - 10) {
       y = chatRect.height - menuHeight - 10;
     }
@@ -678,6 +453,11 @@ export default function Chat({ user, onLogout }) {
     }
   }, [context]);
 
+  // Mark messages as read when component mounts
+  useEffect(() => {
+    markMessagesAsRead();
+  }, [markMessagesAsRead]);
+
   // Computed values
   const grouped = useMemo(() => {
     const groups = [];
@@ -698,29 +478,10 @@ export default function Chat({ user, onLogout }) {
     return groups;
   }, [messages]);
 
-  const peerName = useMemo(() => {
-    const others = Object.keys(presence || {}).filter(u => 
-      u !== user.username && presence[u]?.online
-    );
-    if (others.length >= 1) return others[0];
-    
-    const otherMsg = messages.find(m => 
-      m.username && m.username !== user.username
-    );
-    if (otherMsg) return otherMsg.username;
-    
-    return null;
-  }, [presence, messages, user.username]);
-
-  // Demo user mapping
+  // Peer info
+  const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
   const DEMO_USERS = { ammu: 'Ammu', vero: 'Vero' };
-  const _uname = (user.username || '').toLowerCase().trim();
-  const otherDemoUser = _uname === 'ammu' ? 'vero' : _uname === 'vero' ? 'ammu' : null;
-  const defaultPeerName = otherDemoUser;
-  const defaultPeerDisplay = otherDemoUser ? DEMO_USERS[otherDemoUser] : null;
-  const displayPeer = peerName || defaultPeerName;
-  const displayPeerName = peerName || defaultPeerDisplay || 'Connect to start chatting';
-  const isPeerOnline = !!(displayPeer && presence[displayPeer] && presence[displayPeer].online);
+  const displayPeerName = DEMO_USERS[otherUser] || otherUser || 'Connect to start chatting';
 
   // Helper function to format last seen time
   const formatLastSeen = (lastSeenTime) => {
@@ -738,6 +499,39 @@ export default function Chat({ user, onLogout }) {
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
     return lastSeen.toLocaleDateString();
+  };
+
+  // Connection status display
+  const getConnectionStatusDisplay = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return connectionQuality === 'good' ? 'Connected (SSE)' : 'Connected (Poor Signal)';
+      case 'connecting':
+        return 'Connecting...';
+      case 'error':
+      case 'timeout':
+        return 'Connection Issues';
+      case 'failed':
+        return 'Connection Failed';
+      default:
+        return 'Disconnected';
+    }
+  };
+
+  const getConnectionColor = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return connectionQuality === 'good' ? 'bg-green-500' : 'bg-yellow-500';
+      case 'connecting':
+        return 'bg-blue-500';
+      case 'error':
+      case 'timeout':
+        return 'bg-orange-500';
+      case 'failed':
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-400';
+    }
   };
 
   return (
@@ -773,22 +567,12 @@ export default function Chat({ user, onLogout }) {
                 {displayPeerName}
               </div>
               <div className="text-system-secondaryLabel text-sm flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  connectionStatus === 'connected' ? 'bg-green-500' :
-                  connectionStatus === 'connecting' ? 'bg-yellow-500' :
-                  connectionStatus === 'disconnected' ? 'bg-orange-500' : 'bg-gray-400'
-                }`} />
-                {connectionStatus === 'connected' && peerPresence.direct
-                  ? 'Direct P2P Connected'
-                  : connectionStatus === 'connecting'
-                    ? 'Connecting...'
-                    : connectionStatus === 'disconnected'
-                      ? 'Server Relay Mode'
-                      : peerPresence.status === 'online' 
-                        ? 'Online' 
-                        : peerPresence.lastSeen 
-                          ? `Last seen ${formatLastSeen(peerPresence.lastSeen)}`
-                          : 'Offline'
+                <div className={`w-2 h-2 rounded-full ${getConnectionColor()}`} />
+                {connectionStatus === 'connected' && peerPresence.status === 'online'
+                  ? 'Online'
+                  : connectionStatus === 'connected' && peerPresence.status === 'offline'
+                    ? `Last seen ${formatLastSeen(peerPresence.lastSeen)}`
+                    : getConnectionStatusDisplay()
                 }
               </div>
             </div>
@@ -929,9 +713,6 @@ export default function Chat({ user, onLogout }) {
                                         {msg.edited && (
                                           <span className="text-system-secondaryLabel text-xs">(edited)</span>
                                         )}
-                                        {msg.isDirect && (
-                                          <span className="text-green-500 text-xs ml-1" title="Sent via WebRTC P2P">⚡</span>
-                                        )}
                                         {msg.failed && (
                                           <span className="text-red-500 text-xs ml-1" title="Failed to send">❌</span>
                                         )}
@@ -944,7 +725,8 @@ export default function Chat({ user, onLogout }) {
                                     {msg.username === user.username && (
                                       <div className="msg-delivery">
                                         {receipts[msg.id] === 'read' ? 'Read' :
-                                         receipts[msg.id] === 'delivered' ? 'Delivered' : 'Sent'}
+                                         receipts[msg.id] === 'delivered' ? 'Delivered' : 
+                                         receipts[msg.id] === 'timeout' ? 'Timeout' : 'Sent'}
                                       </div>
                                     )}
                                   </div>
@@ -966,7 +748,7 @@ export default function Chat({ user, onLogout }) {
           </ScrollArea.Root>
         </div>
 
-        {/* Context Menu Next to Clicked Bubble */}
+        {/* Context Menu */}
         {context && (
           <motion.div 
             className="context-menu-overlay"
@@ -1001,7 +783,6 @@ export default function Chat({ user, onLogout }) {
                 
                 return (
                   <>
-                    {/* Reply - Available for all messages */}
                     <motion.button 
                       onClick={() => {
                         setReplyTo(context.id);
@@ -1018,7 +799,6 @@ export default function Chat({ user, onLogout }) {
                       📩 Reply
                     </motion.button>
 
-                    {/* Edit - Only available for own messages */}
                     {isOwnMessage && (
                       <motion.button 
                         onClick={() => handleEdit(context.id)}
@@ -1030,7 +810,6 @@ export default function Chat({ user, onLogout }) {
                       </motion.button>
                     )}
 
-                    {/* Delete - Only available for own messages */}
                     {isOwnMessage && (
                       <motion.button 
                         onClick={() => { handleDelete(context.id); closeContext(); }} 

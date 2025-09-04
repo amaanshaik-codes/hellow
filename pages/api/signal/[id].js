@@ -1,45 +1,27 @@
 // WebRTC signal retrieval endpoint
 // Fetches and deletes signaling data (one-time use)
+// Now using Vercel KV for unified storage
+import { kv } from '@vercel/kv';
 
 let memorySignals = {}; // Development fallback (shared with index.js in real app)
 
-async function getFromUpstash(signalId) {
+async function getFromKV(signalId) {
   try {
     // Get the signal data
-    const getUrl = `${process.env.UPSTASH_REST_URL}/get/${encodeURIComponent(signalId)}`;
-    const getResponse = await fetch(getUrl, {
-      headers: { 
-        Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` 
-      }
-    });
-
-    if (!getResponse.ok) {
-      console.error('Upstash get error:', getResponse.status);
-      return null;
-    }
-
-    const getData = await getResponse.json();
-    if (!getData.result) {
+    const signalKey = `signal:${signalId}`;
+    const signalData = await kv.get(signalKey);
+    
+    if (!signalData) {
       return null; // Signal not found or expired
     }
 
     // Delete the signal (one-time use)
-    const deleteUrl = `${process.env.UPSTASH_REST_URL}/del/${encodeURIComponent(signalId)}`;
-    await fetch(deleteUrl, {
-      method: 'POST',
-      headers: { 
-        Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` 
-      }
-    });
+    await kv.del(signalKey);
 
-    // Parse and return the payload
-    try {
-      return JSON.parse(getData.result);
-    } catch {
-      return getData.result; // Return as-is if not JSON
-    }
+    // Return the payload
+    return signalData;
   } catch (error) {
-    console.error('Failed to get from Upstash:', error);
+    console.error('Failed to get from Vercel KV:', error);
     return null;
   }
 }
@@ -56,12 +38,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid signal ID' });
     }
 
-    const hasUpstash = process.env.UPSTASH_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN;
     let payload = null;
 
-    if (hasUpstash) {
-      payload = await getFromUpstash(id);
-    } else {
+    // Always try Vercel KV first
+    try {
+      payload = await getFromKV(id);
+    } catch (kvError) {
+      console.warn('🚨 [SIGNAL] Vercel KV unavailable, using memory fallback:', kvError.message);
       // Development fallback - check memory storage
       const signal = memorySignals[id];
       if (signal) {

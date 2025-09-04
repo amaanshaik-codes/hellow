@@ -1,14 +1,16 @@
 
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Login from '../components/Login';
-import Chat from '../components/Chat';
+import ChatSSE from '../components/ChatSSE';
+import { AutoLogoutManager } from '../lib/autoLogout';
 
 export default function Home() {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const autoLogoutRef = useRef(null);
 
   // Auto-login if valid token exists
   useEffect(() => {
@@ -16,6 +18,26 @@ export default function Home() {
       const token = localStorage.getItem('hellow_token');
       const username = localStorage.getItem('hellow_user');
       const displayName = localStorage.getItem('hellow_displayName');
+      
+      // Check for inactivity timeout FIRST (even before token validation)
+      const lastActivity = localStorage.getItem('hellow_last_activity');
+      if (lastActivity) {
+        const lastActivityTime = parseInt(lastActivity);
+        const now = Date.now();
+        const timeSinceLastActivity = now - lastActivityTime;
+        const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+        
+        if (timeSinceLastActivity > fiveMinutes) {
+          console.log(`🚪 Auto-logout on page load: ${Math.round(timeSinceLastActivity / 1000 / 60)}m > 5m`);
+          // Force logout due to inactivity
+          localStorage.removeItem('hellow_token');
+          localStorage.removeItem('hellow_user');
+          localStorage.removeItem('hellow_displayName');
+          localStorage.removeItem('hellow_last_activity');
+          setIsLoading(false);
+          return;
+        }
+      }
       
       if (token && username) {
         // Verify token is not expired (basic check)
@@ -32,12 +54,14 @@ export default function Home() {
             localStorage.removeItem('hellow_token');
             localStorage.removeItem('hellow_user');
             localStorage.removeItem('hellow_displayName');
+            localStorage.removeItem('hellow_last_activity');
           }
         } catch (e) {
           // Invalid token format, clear storage
           localStorage.removeItem('hellow_token');
           localStorage.removeItem('hellow_user');
           localStorage.removeItem('hellow_displayName');
+          localStorage.removeItem('hellow_last_activity');
         }
       }
     } catch (e) {
@@ -54,6 +78,17 @@ export default function Home() {
       if (userData.user?.displayName) {
         localStorage.setItem('hellow_displayName', userData.user.displayName);
       }
+      
+      // Initialize auto-logout manager
+      if (autoLogoutRef.current) {
+        autoLogoutRef.current.destroy();
+      }
+      
+      autoLogoutRef.current = new AutoLogoutManager(5, (reason) => {
+        console.log(`🚪 Auto-logout triggered: ${reason}`);
+        handleLogout();
+      });
+      
       setUser({
         username: userData.username,
         token: userData.token,
@@ -67,14 +102,30 @@ export default function Home() {
 
   const handleLogout = () => {
     try {
+      // Cleanup auto-logout manager
+      if (autoLogoutRef.current) {
+        autoLogoutRef.current.destroy();
+        autoLogoutRef.current = null;
+      }
+      
       localStorage.removeItem('hellow_token');
       localStorage.removeItem('hellow_user');
       localStorage.removeItem('hellow_displayName');
+      localStorage.removeItem('hellow_last_activity');
     } catch (e) {
       console.warn('Failed to clear credentials:', e);
     }
     setUser(null);
   };
+
+  // Cleanup auto-logout manager on component unmount
+  useEffect(() => {
+    return () => {
+      if (autoLogoutRef.current) {
+        autoLogoutRef.current.destroy();
+      }
+    };
+  }, []);
 
   // PWA Install handling
   useEffect(() => {
@@ -136,7 +187,7 @@ export default function Home() {
 
   return user ? (
     <>
-      <Chat user={user} onLogout={handleLogout} />
+      <ChatSSE user={user} onLogout={handleLogout} />
       
       {/* PWA Install Prompt */}
       {showInstallPrompt && (
