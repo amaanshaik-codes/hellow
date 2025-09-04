@@ -48,6 +48,7 @@ export default function Chat({ user, onLogout }) {
     // Setup real-time polling using the new instant API
     const realtimeInterval = setInterval(() => {
       checkForNewMessages();
+      checkPresenceUpdates(); // Also check for presence updates
     }, 1000); // Check every 1 second for instant feel
     
     // Setup presence heartbeat to keep user online
@@ -67,12 +68,16 @@ export default function Chat({ user, onLogout }) {
   const checkForNewMessages = async () => {
     try {
       const room = 'ammu-vero-private-room';
+      const lastTimestamp = lastMessageTimeRef.current;
+      console.log(`🔍 [${user.username}] Checking for messages since timestamp: ${lastTimestamp} (${new Date(lastTimestamp).toLocaleString()})`);
+      
       const response = await fetch(
-        `/api/instant?room=${room}&username=${user.username}&last=${lastMessageTimeRef.current}`
+        `/api/instant?room=${room}&username=${user.username}&last=${lastTimestamp}`
       );
       
       if (response.ok) {
         const data = await response.json();
+        console.log(`📥 [${user.username}] Instant API response:`, data);
         
         if (data.hasNew && data.messages.length > 0) {
           console.log(`⚡ [${user.username}] INSTANT: Got ${data.messages.length} new messages!`);
@@ -92,10 +97,39 @@ export default function Chat({ user, onLogout }) {
           // Update timestamp for both state and ref
           setLastMessageTime(data.latestTimestamp);
           lastMessageTimeRef.current = data.latestTimestamp;
+          console.log(`📅 [${user.username}] Updated lastMessageTime to: ${data.latestTimestamp}`);
         }
+      } else {
+        console.error(`❌ [${user.username}] Instant API error: ${response.status}`);
       }
     } catch (error) {
       console.error('❌ Instant check error:', error);
+    }
+  };
+
+  // Check for presence updates and typing indicators
+  const checkPresenceUpdates = async () => {
+    try {
+      const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
+      
+      // Check presence
+      const presenceResponse = await fetch(`/api/presence?username=${otherUser}`);
+      if (presenceResponse.ok) {
+        const presenceData = await presenceResponse.json();
+        setPeerPresence({
+          status: presenceData.status || 'offline',
+          lastSeen: presenceData.lastSeen
+        });
+      }
+      
+      // Check typing status
+      const typingResponse = await fetch(`/api/typing?username=${user.username}`);
+      if (typingResponse.ok) {
+        const typingData = await typingResponse.json();
+        setIsTyping(typingData.isTyping || false);
+      }
+    } catch (error) {
+      console.error('❌ Presence/Typing check error:', error);
     }
   };
 
@@ -236,10 +270,32 @@ export default function Chat({ user, onLogout }) {
 
   // Handle typing indicators
   const handleTyping = useCallback(() => {
-    // You could send typing indicators to the peer here
-    // For now, just log it
-    console.log('👀 User is typing...');
-  }, []);
+    // Send typing indicator to other user
+    const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
+    fetch('/api/typing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: user.username,
+        targetUser: otherUser,
+        isTyping: true
+      })
+    }).catch(err => console.error('Typing indicator error:', err));
+    
+    // Clear typing indicator after 3 seconds of no typing
+    clearTimeout(window.typingTimeout);
+    window.typingTimeout = setTimeout(() => {
+      fetch('/api/typing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: user.username,
+          targetUser: otherUser,
+          isTyping: false
+        })
+      }).catch(err => console.error('Typing stop error:', err));
+    }, 3000);
+  }, [user.username]);
 
   // Message sending with backend persistence
   const sendMessage = useCallback(async (e) => {
@@ -836,6 +892,38 @@ export default function Chat({ user, onLogout }) {
             </div>
           ) : null;
         })()}
+
+        {/* Typing Indicator */}
+        {isTyping && (
+          <motion.div 
+            className="typing-indicator px-8 py-2 text-sm text-system-secondaryLabel"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1">
+                <motion.div 
+                  className="w-2 h-2 bg-system-secondaryLabel rounded-full"
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
+                />
+                <motion.div 
+                  className="w-2 h-2 bg-system-secondaryLabel rounded-full"
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
+                />
+                <motion.div 
+                  className="w-2 h-2 bg-system-secondaryLabel rounded-full"
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
+                />
+              </div>
+              <span>{displayPeerName} is typing...</span>
+            </div>
+          </motion.div>
+        )}
 
         {/* Input Bar */}
         <motion.div 
