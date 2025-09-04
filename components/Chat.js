@@ -20,9 +20,10 @@ export default function Chat({ user, onLogout }) {
   
   // Real-time state
   const [isOnline, setIsOnline] = useState(true);
-  const [peerPresence, setPeerPresence] = useState({ status: 'offline', lastSeen: null });
+  const [peerPresence, setPeerPresence] = useState({ status: 'offline', lastSeen: null, direct: false });
   const [lastMessageTime, setLastMessageTime] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
   
   // UI state
   const [editing, setEditing] = useState({ id: null, text: '' });
@@ -32,6 +33,8 @@ export default function Chat({ user, onLogout }) {
   
   // Refs for real-time messaging
   const lastMessageTimeRef = useRef(0);
+  const webrtcManagerRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
   
   // Refs
   const textareaRef = useRef(null);
@@ -64,6 +67,87 @@ export default function Chat({ user, onLogout }) {
       updatePresence('offline');
     };
   }, [user.username]); // Add user.username dependency
+
+  // Initialize WebRTC manager for P2P communication
+  useEffect(() => {
+    const roomId = 'ammu-vero-private-room';
+    
+    const handleWebRTCMessage = (messageData) => {
+      console.log('📨 Received WebRTC P2P message:', messageData);
+      
+      // Add message to UI immediately
+      setMessages(prev => {
+        const exists = prev.find(m => m.id === messageData.id);
+        if (exists) return prev;
+        
+        const newMessage = {
+          ...messageData,
+          timestamp: messageData.timestamp || Date.now(),
+          isDirect: true // Mark as P2P message
+        };
+        
+        return [...prev, newMessage].sort((a, b) => a.timestamp - b.timestamp);
+      });
+      
+      // Update last message time
+      lastMessageTimeRef.current = Math.max(lastMessageTimeRef.current, messageData.timestamp || Date.now());
+      
+      // Scroll to bottom
+      setTimeout(() => {
+        chatBottom.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    };
+    
+    const handleWebRTCPresence = (presenceData) => {
+      console.log('👥 WebRTC Presence update:', presenceData);
+      setPeerPresence(prev => ({
+        ...prev,
+        ...presenceData
+      }));
+      
+      if (presenceData.status === 'online' && presenceData.direct) {
+        setConnectionStatus('connected');
+      } else if (presenceData.status === 'offline') {
+        setConnectionStatus('disconnected');
+      }
+    };
+    
+    const handleWebRTCTyping = (typingData) => {
+      console.log('⌨️ WebRTC Typing update:', typingData);
+      setIsTyping(typingData.isTyping);
+      
+      // Auto-clear typing indicator after 3 seconds
+      if (typingData.isTyping) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+          setIsTyping(false);
+        }, 3000);
+      }
+    };
+    
+    // Initialize WebRTC manager
+    try {
+      webrtcManagerRef.current = new WebRTCManager(
+        user.username,
+        roomId,
+        handleWebRTCMessage,
+        handleWebRTCPresence,
+        handleWebRTCTyping
+      );
+      console.log('✅ WebRTC Manager initialized');
+    } catch (error) {
+      console.error('❌ WebRTC initialization failed:', error);
+      setConnectionStatus('fallback');
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (webrtcManagerRef.current) {
+        webrtcManagerRef.current.destroy();
+      }
+      clearTimeout(typingTimeoutRef.current);
+    };
+  }, [user.username]);
 
   // New instant message checking function
   const checkForNewMessages = async () => {
@@ -271,7 +355,17 @@ export default function Chat({ user, onLogout }) {
 
   // Handle typing indicators
   const handleTyping = useCallback(() => {
-    // Send typing indicator to other user
+    // Try WebRTC first
+    if (webrtcManagerRef.current) {
+      try {
+        webrtcManagerRef.current.sendTyping(true);
+        console.log('⌨️ Typing indicator sent via WebRTC');
+      } catch (error) {
+        console.error('❌ WebRTC typing failed:', error);
+      }
+    }
+    
+    // Fallback to server API
     const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
     fetch('/api/typing', {
       method: 'POST',
@@ -281,11 +375,21 @@ export default function Chat({ user, onLogout }) {
         targetUser: otherUser,
         isTyping: true
       })
-    }).catch(err => console.error('Typing indicator error:', err));
+    }).catch(err => console.error('Typing indicator fallback error:', err));
     
     // Clear typing indicator after 3 seconds of no typing
     clearTimeout(window.typingTimeout);
     window.typingTimeout = setTimeout(() => {
+      // Stop typing via WebRTC
+      if (webrtcManagerRef.current) {
+        try {
+          webrtcManagerRef.current.sendTyping(false);
+        } catch (error) {
+          console.error('❌ WebRTC typing stop failed:', error);
+        }
+      }
+      
+      // Fallback to server API
       fetch('/api/typing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -294,7 +398,7 @@ export default function Chat({ user, onLogout }) {
           targetUser: otherUser,
           isTyping: false
         })
-      }).catch(err => console.error('Typing stop error:', err));
+      }).catch(err => console.error('Typing stop fallback error:', err));
     }, 3000);
   }, [user.username]);
 
@@ -308,7 +412,8 @@ export default function Chat({ user, onLogout }) {
       text: input.trim(),
       username: user.username,
       timestamp: Date.now(),
-      replyTo: replyTo
+      replyTo: replyTo,
+      isDirect: false // Will be set to true if sent via WebRTC
     };
 
     console.log(`💬 [${user.username}] Sending message with timestamp:`, newMessage.timestamp, `(${new Date(newMessage.timestamp).toLocaleString()})`);
@@ -317,7 +422,7 @@ export default function Chat({ user, onLogout }) {
     setInput('');
     setReplyTo(null);
     
-    // Add to local state immediately
+    // Add to local state immediately (optimistic update)
     setMessages(prev => [...prev, newMessage]);
     
     // Update lastMessageTime to this message's timestamp to avoid re-fetching it
@@ -325,11 +430,57 @@ export default function Chat({ user, onLogout }) {
     lastMessageTimeRef.current = newMessage.timestamp;
     console.log(`📅 [${user.username}] Updated lastMessageTime to sent message timestamp: ${newMessage.timestamp}`);
     
-    // Save to backend in background (don't block UI)
-    saveMessageToBackend(newMessage).catch(error => {
-      console.error('Failed to save message to backend:', error);
-      // Note: We keep the message in UI even if backend save fails
-    });
+    // Try WebRTC first
+    let sentViaWebRTC = false;
+    if (webrtcManagerRef.current) {
+      try {
+        sentViaWebRTC = webrtcManagerRef.current.sendMessage(newMessage);
+        if (sentViaWebRTC) {
+          console.log('✅ Message sent via WebRTC P2P');
+          // Update message to mark as direct
+          setMessages(prev => prev.map(msg => 
+            msg.id === newMessage.id ? { ...msg, isDirect: true } : msg
+          ));
+        }
+      } catch (error) {
+        console.error('❌ WebRTC send failed:', error);
+      }
+    }
+    
+    // If WebRTC failed, use server fallback
+    if (!sentViaWebRTC) {
+      console.log('📡 Using server fallback for message delivery');
+      try {
+        // Try new Vercel KV storage first
+        const kvResponse = await fetch('/api/messages/store', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user.token}`
+          },
+          body: JSON.stringify({
+            text: newMessage.text,
+            roomId: 'ammu-vero-private-room',
+            isDirect: false,
+            replyTo: newMessage.replyTo
+          })
+        });
+        
+        if (kvResponse.ok) {
+          console.log('✅ Message sent via Vercel KV fallback');
+        } else {
+          // Final fallback to original backend
+          await saveMessageToBackend(newMessage);
+          console.log('✅ Message sent via original backend fallback');
+        }
+      } catch (error) {
+        console.error('❌ All message delivery methods failed:', error);
+        // Keep message in UI but mark as failed
+        setMessages(prev => prev.map(msg => 
+          msg.id === newMessage.id ? { ...msg, failed: true } : msg
+        ));
+      }
+    }
     
     // Update unread count for other user
     updateUnreadCount();
@@ -337,6 +488,11 @@ export default function Chat({ user, onLogout }) {
     // Mark last read time for current user
     const lastReadKey = `hellow_last_read_${user.username}`;
     localStorage.setItem(lastReadKey, Date.now().toString());
+    
+    // Scroll to bottom
+    setTimeout(() => {
+      chatBottom.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   }, [input, user.username, replyTo]);
 
   // Update unread count for the other user
@@ -618,13 +774,21 @@ export default function Chat({ user, onLogout }) {
               </div>
               <div className="text-system-secondaryLabel text-sm flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${
-                  peerPresence.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
+                  connectionStatus === 'connected' ? 'bg-green-500' :
+                  connectionStatus === 'connecting' ? 'bg-yellow-500' :
+                  connectionStatus === 'disconnected' ? 'bg-orange-500' : 'bg-gray-400'
                 }`} />
-                {peerPresence.status === 'online' 
-                  ? 'Online' 
-                  : peerPresence.lastSeen 
-                    ? `Last seen ${formatLastSeen(peerPresence.lastSeen)}`
-                    : 'Offline'
+                {connectionStatus === 'connected' && peerPresence.direct
+                  ? 'Direct P2P Connected'
+                  : connectionStatus === 'connecting'
+                    ? 'Connecting...'
+                    : connectionStatus === 'disconnected'
+                      ? 'Server Relay Mode'
+                      : peerPresence.status === 'online' 
+                        ? 'Online' 
+                        : peerPresence.lastSeen 
+                          ? `Last seen ${formatLastSeen(peerPresence.lastSeen)}`
+                          : 'Offline'
                 }
               </div>
             </div>
@@ -764,6 +928,12 @@ export default function Chat({ user, onLogout }) {
                                         {msg.text} 
                                         {msg.edited && (
                                           <span className="text-system-secondaryLabel text-xs">(edited)</span>
+                                        )}
+                                        {msg.isDirect && (
+                                          <span className="text-green-500 text-xs ml-1" title="Sent via WebRTC P2P">⚡</span>
+                                        )}
+                                        {msg.failed && (
+                                          <span className="text-red-500 text-xs ml-1" title="Failed to send">❌</span>
                                         )}
                                       </div>
                                     </div>
