@@ -44,6 +44,11 @@ self.addEventListener('fetch', event => {
   }
   
   // For other resources, use network-first strategy
+  // Bypass the service worker for API and SSE endpoints to avoid interfering with EventSource
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/')) {
+    return; // Let browser handle these requests directly
+  }
+
   event.respondWith(
     fetch(request).catch(() => {
       return caches.match(request);

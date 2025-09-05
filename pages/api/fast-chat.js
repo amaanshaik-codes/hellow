@@ -178,27 +178,6 @@ async function handlePresence(res, room, username, isOnline, startTime) {
   }
 }
 
-// Background storage functions (non-blocking)
-async function storeMessageInBackground(room, messageData) {
-  try {
-    // Store in messages list
-    const messagesKey = `room_messages_${room}`;
-    const messages = await kv.get(messagesKey) || [];
-    
-    // Keep only last 100 messages to prevent memory bloat
-    const updatedMessages = [...messages, messageData].slice(-100);
-    
-    // Store with 24 hour expiry
-    await kv.setex(messagesKey, 86400, updatedMessages);
-    
-    // Also store individual message for reference
-    await kv.setex(`message_${messageData.id}`, 3600, messageData);
-    
-    console.log(`💾 Message stored: ${messageData.id}`);
-  } catch (error) {
-    console.error('Background message storage failed:', error);
-  }
-}
 
 async function updatePresenceInBackground(room, username, isOnline) {
   try {
