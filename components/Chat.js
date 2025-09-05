@@ -304,11 +304,20 @@ export default function Chat({ user, onLogout }) {
                 {displayPeerName}
               </div>
               <div className="text-system-secondaryLabel text-sm flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  isConnected ? 'bg-green-500' : 'bg-yellow-500'
-                }`} />
-                {formatConnectionStatus()}
-                {peerStatus === 'online' ? ' • Online' : peerStatus === 'offline' ? ' • Offline' : ''}
+                <div
+                  className="status-dot"
+                  aria-hidden
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 9999,
+                    backgroundColor: isConnected ? 'var(--status-online, #16a34a)' : 'var(--status-offline, #d97706)'
+                  }}
+                />
+                <div>
+                  {formatConnectionStatus()}
+                  {peerStatus === 'online' ? <span className="ml-2">• Online</span> : peerStatus === 'offline' ? <span className="ml-2">• Offline</span> : null}
+                </div>
               </div>
             </div>
           </div>
@@ -335,9 +344,9 @@ export default function Chat({ user, onLogout }) {
         </motion.div>
 
         {/* Messages */}
-        <div className="messages-column">
-          <ScrollArea.Root className="h-full" style={{ display: 'flex', flex: 1, flexDirection: 'column' }}>
-            <ScrollArea.Viewport ref={viewportRef} style={{ height: '100%', minHeight: '100%' }}>
+        <div className="messages-column" style={{ display: 'flex', flex: '1 1 auto', minHeight: 0, flexDirection: 'column' }}>
+          <ScrollArea.Root className="messages-scroll-root" style={{ display: 'flex', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+            <ScrollArea.Viewport ref={viewportRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               {grouped.map(g => (
                 <div key={g.label}>
                   <div className="date-sep">{g.label}</div>
