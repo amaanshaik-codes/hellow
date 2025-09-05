@@ -1,7 +1,7 @@
 // Message Storage API - Vercel KV for persistence and fallback
 import { kv } from '@vercel/kv';
 import jwt from 'jsonwebtoken';
-import messageEventManager from '../../lib/messageEvents.js';
+import messageEventManager from '../../../lib/messageEvents.js';
 
 export default async function handler(req, res) {
   const { method } = req;

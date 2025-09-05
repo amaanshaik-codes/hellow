@@ -1,6 +1,6 @@
 // Advanced Server-Sent Events API for best-in-class real-time messaging
 import { kv } from '@vercel/kv';
-import messageEventManager from '../lib/messageEvents.js';
+import messageEventManager from '../../lib/messageEvents.js';
 
 // Track active connections for real-time notifications
 const activeConnections = new Map(); // room -> Set of { username, res, lastSeen }
