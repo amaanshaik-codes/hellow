@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Login from '../components/Login';
 import ChatSSE from '../components/ChatSSE';
+import ChatEnhanced from '../components/ChatEnhanced';
 import { AutoLogoutManager } from '../lib/autoLogout';
 
 export default function Home() {
@@ -187,7 +188,7 @@ export default function Home() {
 
   return user ? (
     <>
-      <ChatSSE user={user} onLogout={handleLogout} />
+      <ChatEnhanced user={user} onLogout={handleLogout} />
       
       {/* PWA Install Prompt */}
       {showInstallPrompt && (

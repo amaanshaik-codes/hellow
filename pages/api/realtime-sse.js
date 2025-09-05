@@ -94,7 +94,7 @@ export default async function handler(req, res) {
   userConnInfo.lastConnect = now;
   userConnections.set(username, userConnInfo);
 
-  // Set up SSE headers with better compatibility
+  // Set up SSE headers with better compatibility and connection stability
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -103,6 +103,8 @@ export default async function handler(req, res) {
     'Access-Control-Allow-Headers': 'Cache-Control, Authorization',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'X-Accel-Buffering': 'no', // Disable Nginx buffering
+    'Transfer-Encoding': 'chunked', // Ensure proper chunked encoding
+    'Content-Encoding': 'identity', // Disable compression for SSE
   });
 
   const lastSince = parseInt(since) || 0;
@@ -148,12 +150,20 @@ export default async function handler(req, res) {
     console.error('❌ [SSE] Failed to save online presence:', error);
   }
 
-  // Send initial connection confirmation
+  // Send initial connection confirmation with proper SSE format
   const sendSSEMessage = (data) => {
     if (!connectionAlive) return false;
     
     try {
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      // Send proper SSE format with retry directive
+      const sseData = `id: ${Date.now()}\nretry: 1000\ndata: ${JSON.stringify(data)}\n\n`;
+      res.write(sseData);
+      
+      // Force flush the response to ensure immediate delivery
+      if (res.flush && typeof res.flush === 'function') {
+        res.flush();
+      }
+      
       return true;
     } catch (error) {
       console.error(`❌ [SSE] Failed to send message to ${username}:`, error);
@@ -162,12 +172,19 @@ export default async function handler(req, res) {
     }
   };
 
-  // Send connection established
+  // Send connection established with immediate heartbeat
   sendSSEMessage({ 
     type: 'connected', 
     timestamp: Date.now(),
     room,
     username
+  });
+  
+  // Send immediate heartbeat to establish connection
+  sendSSEMessage({
+    type: 'heartbeat',
+    timestamp: Date.now(),
+    connectionId: `${username}_${Date.now()}`
   });
   
   // **REAL-TIME MESSAGE LISTENER**: Listen for new messages from the message store
@@ -372,20 +389,20 @@ export default async function handler(req, res) {
     
     messageCheckCounter++;
     
-    // Check messages every cycle (500ms)
+    // Check messages every cycle (250ms)
     const messagesOk = await checkForMessages();
     
-    // Check presence every 2 seconds (every 4th cycle)
-    if (messageCheckCounter % 4 === 0) {
+    // Check presence every 2 seconds (every 8th cycle)
+    if (messageCheckCounter % 8 === 0) {
       await checkForPresence();
     }
     
-    // Check typing every second (every 2nd cycle)
+    // Check typing every 500ms (every 2nd cycle)
     if (messageCheckCounter % 2 === 0) {
       await checkForTyping();
     }
     
-    // Send heartbeat every 10 seconds (every 20th cycle)
+    // Send heartbeat every 5 seconds (every 20th cycle)
     if (messageCheckCounter % 20 === 0) {
       const sent = sendSSEMessage({ 
         type: 'heartbeat', 
@@ -404,7 +421,7 @@ export default async function handler(req, res) {
       connectionAlive = false;
       clearInterval(mainInterval);
     }
-  }, 500); // Check every 500ms for ultra-responsive messaging
+  }, 250); // Check every 250ms for ultra-responsive messaging
 
   // Broadcast new message to all connected clients in room (except sender)
   const broadcastToRoom = async (messageData, excludeUsername = null) => {
@@ -420,7 +437,16 @@ export default async function handler(req, res) {
     for (const conn of connections) {
       if (conn.username !== excludeUsername && conn.res) {
         try {
-          conn.res.write(`data: ${JSON.stringify(messageToSend)}\n\n`);
+          // Use improved SSE format with proper headers
+          const sseData = `id: ${Date.now()}\nretry: 1000\ndata: ${JSON.stringify(messageToSend)}\n\n`;
+          conn.res.write(sseData);
+          
+          // Force flush for immediate delivery
+          if (conn.res.flush && typeof conn.res.flush === 'function') {
+            conn.res.flush();
+          }
+          
+          console.log(`📨 [SSE] Broadcasted message to ${conn.username}`);
         } catch (error) {
           console.error(`❌ [SSE] Failed to broadcast to ${conn.username}:`, error);
           connections.delete(conn);
@@ -491,7 +517,13 @@ export default async function handler(req, res) {
           
           for (const conn of remainingConnections) {
             try {
-              conn.res.write(`data: ${JSON.stringify(presenceMessage)}\n\n`);
+              const sseData = `id: ${Date.now()}\nretry: 1000\ndata: ${JSON.stringify(presenceMessage)}\n\n`;
+              conn.res.write(sseData);
+              
+              // Force flush for immediate delivery
+              if (conn.res.flush && typeof conn.res.flush === 'function') {
+                conn.res.flush();
+              }
             } catch (error) {
               console.error(`❌ [SSE] Failed to send presence update:`, error);
             }
