@@ -59,6 +59,9 @@ export default async function handler(req, res) {
       case 'markOffline':
         return await handleMarkOffline(res, room, username, req.body.lastSeen || Date.now(), startTime);
       
+      case 'getMessages':
+        return await handleGetMessages(res, room, req.query.since || 0, startTime);
+      
       default:
         return res.status(400).json({ error: 'Unknown action' });
     }
@@ -260,5 +263,33 @@ async function handleMarkOffline(res, room, username, lastSeen, startTime) {
   } catch (error) {
     console.error('Mark offline error:', error);
     return res.status(500).json({ error: 'Failed to mark offline' });
+  }
+}
+
+// Get recent messages since a timestamp
+async function handleGetMessages(res, room, since, startTime) {
+  try {
+    const messagesKey = `room_messages_${room}`;
+    const messages = await kv.get(messagesKey) || [];
+    
+    // Filter messages since the provided timestamp
+    const sinceTime = parseInt(since) || 0;
+    const recentMessages = messages
+      .filter(msg => msg.timestamp > sinceTime)
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-50); // Limit to last 50 messages
+    
+    const processingTime = Date.now() - startTime;
+    console.log(`📦 Retrieved ${recentMessages.length} messages since ${since} in ${processingTime}ms`);
+
+    return res.status(200).json({
+      success: true,
+      messages: recentMessages,
+      processingTime
+    });
+
+  } catch (error) {
+    console.error('Get messages error:', error);
+    return res.status(500).json({ error: 'Failed to get messages' });
   }
 }
