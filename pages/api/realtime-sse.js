@@ -1,5 +1,6 @@
 // Advanced Server-Sent Events API for best-in-class real-time messaging
 import { kv } from '@vercel/kv';
+import messageEventManager from '../lib/messageEvents.js';
 
 // Track active connections for real-time notifications
 const activeConnections = new Map(); // room -> Set of { username, res, lastSeen }
@@ -8,8 +9,8 @@ const typingStatus = new Map(); // room -> Map of username -> typing info
 
 // **CONNECTION THROTTLING**: Track connections per user to prevent abuse
 const userConnections = new Map(); // username -> { count, lastConnect }
-const MAX_CONNECTIONS_PER_USER = 3;
-const CONNECTION_COOLDOWN = 1000; // 1 second between connections
+const MAX_CONNECTIONS_PER_USER = 5; // Increased for better real-time experience
+const CONNECTION_COOLDOWN = 500; // Reduced to 500ms for faster reconnections
 
 // **ADVANCED CACHING**: Memory cache for recent messages to reduce KV queries
 const messageCache = new Map(); // room -> { messages: [], lastUpdate: timestamp, ttl: 30000 }
@@ -168,6 +169,26 @@ export default async function handler(req, res) {
     room,
     username
   });
+  
+  // **REAL-TIME MESSAGE LISTENER**: Listen for new messages from the message store
+  const handleNewMessage = (newMessage) => {
+    if (!connectionAlive) return;
+    
+    // Don't send the message back to the sender
+    if (newMessage.username === username) return;
+    
+    console.log(`📨 [SSE] Broadcasting new message to ${username}:`, newMessage.text);
+    
+    sendSSEMessage({
+      type: 'messages',
+      messages: [newMessage],
+      timestamp: Date.now()
+    });
+  };
+  
+  // Register the event listener
+  messageEventManager.addListener(room, handleNewMessage);
+  console.log(`📡 [SSE] Registered real-time message listener for ${username} in ${room}`);
 
   // Send current presence info for all users in room
   const currentPresence = presenceData.get(room);
@@ -412,6 +433,10 @@ export default async function handler(req, res) {
   const cleanup = async () => {
     console.log(`🔌 [SSE] ${username} disconnecting from ${room}`);
     connectionAlive = false;
+    
+    // **REAL-TIME CLEANUP**: Remove the message event listener
+    messageEventManager.removeListener(room, handleNewMessage);
+    console.log(`📡 [SSE] Removed real-time message listener for ${username} in ${room}`);
     
     // **CONNECTION THROTTLING**: Decrease user connection count
     const userConnInfo = userConnections.get(username);

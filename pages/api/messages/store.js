@@ -1,6 +1,7 @@
 // Message Storage API - Vercel KV for persistence and fallback
 import { kv } from '@vercel/kv';
 import jwt from 'jsonwebtoken';
+import messageEventManager from '../../lib/messageEvents.js';
 
 export default async function handler(req, res) {
   const { method } = req;
@@ -123,6 +124,15 @@ async function handleSendMessage(req, res, username) {
     // Store updated messages
     await kv.set(roomKey, updatedMessages);
     console.log(`✅ [MESSAGE-API] Message stored successfully`);
+    
+    // **REAL-TIME NOTIFICATION**: Notify all SSE connections about the new message
+    try {
+      messageEventManager.notifyNewMessage(message.roomId, message);
+      console.log(`📡 [MESSAGE-API] Broadcasted new message to SSE listeners`);
+    } catch (broadcastError) {
+      console.warn(`⚠️ [MESSAGE-API] Failed to broadcast message:`, broadcastError);
+      // Don't fail the entire operation if broadcast fails
+    }
     
     // Also store individual message for quick access
     const msgKey = `msg:${message.id}`;
