@@ -5,6 +5,7 @@ import { kv } from '@vercel/kv';
 
 // Use a single constant for the room name everywhere
 const HELLOW_ROOM = 'ammu-vero-private-room';
+import { traceEvent } from '../../lib/messageTrace';
 const activeConnections = new Map();
 const roomSubscriptions = new Map();
 
@@ -188,14 +189,19 @@ function cleanupConnection(connectionId, room) {
 }
 
 // Function to broadcast to all connections in a room
-export function broadcastToRoom(room, data, eventType = 'message') {
+export function broadcastToRoom(room, data, eventType = 'message', options = {}) {
   const roomConnections = roomSubscriptions.get(room);
   if (!roomConnections) return 0;
 
   let successCount = 0;
   const timestamp = Date.now();
 
+  // If a specific targetConnectionId is provided, only send to that connection
+  const target = options.targetConnectionId;
+
   roomConnections.forEach(connectionId => {
+    if (target && connectionId !== target) return; // skip non-targets
+
     const connection = activeConnections.get(connectionId);
     if (connection) {
       try {
@@ -206,6 +212,17 @@ export function broadcastToRoom(room, data, eventType = 'message') {
           timestamp
         })}\n\n`);
         successCount++;
+
+        // Log deliver per connection for tracing
+        console.log(`\ud83d\udcec DELIVER ${eventType} -> ${connectionId} (room=${room}, id=${data.id || timestamp})`);
+        // Trace per-connection deliver (non-blocking)
+        try {
+          if (data?.id) {
+            traceEvent(data.id, 'DELIVER', { toConnection: connectionId, eventType, deliveredAt: timestamp });
+          }
+        } catch (tErr) {
+          console.warn('traceEvent DELIVER failed', tErr);
+        }
       } catch (error) {
         console.error(`Failed to send to ${connectionId}:`, error);
         cleanupConnection(connectionId, room);
@@ -213,7 +230,7 @@ export function broadcastToRoom(room, data, eventType = 'message') {
     }
   });
 
-  console.log(`📡 Broadcasted to ${successCount}/${roomConnections.size} connections in room ${room}`);
+  console.log(`\ud83d\udce1 Broadcasted ${eventType} to ${successCount}/${roomConnections.size} connections in room ${room}`);
   return successCount;
 }
 

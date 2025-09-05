@@ -42,13 +42,38 @@ export default function Chat({ user, onLogout }) {
   const textareaRef = useRef(null);
   const viewportRef = useRef(null);
   const chatBottom = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    if (chatBottom.current) {
-      chatBottom.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
+    // Auto-scroll to bottom when new messages arrive, but only if user is near the bottom
+    useEffect(() => {
+      try {
+        const viewport = viewportRef.current;
+        if (!viewport) {
+          // Fallback to chatBottom behavior
+          chatBottom.current && chatBottom.current.scrollIntoView({ behavior: 'smooth' });
+          return;
+        }
+
+        // Determine if user is near the bottom (within 150px)
+        const scrollTop = viewport.scrollTop;
+        const clientHeight = viewport.clientHeight;
+        const scrollHeight = viewport.scrollHeight;
+        const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+
+        const isNearBottom = distanceFromBottom < 150;
+
+        // If near bottom OR the latest message was sent by local user, scroll
+        const lastMsg = messages[messages.length - 1];
+        const lastIsLocal = lastMsg && lastMsg.username === user.username;
+
+        if (isNearBottom || lastIsLocal) {
+          // Scroll smoothly
+          chatBottom.current && chatBottom.current.scrollIntoView({ behavior: 'smooth' });
+        }
+      } catch (e) {
+        console.warn('Auto-scroll failed:', e);
+      }
+    }, [messages]);
 
   // Handle presence - set online when component mounts, offline when unmounts
   useEffect(() => {
@@ -68,14 +93,15 @@ export default function Chat({ user, onLogout }) {
       sendTyping(true);
     }
     
-    // Clear existing timeout
-    clearTimeout(window.typingTimeout);
-    
+    // Clear existing timeout (use ref to avoid global)
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
     // Auto-stop typing after 3 seconds
-    window.typingTimeout = setTimeout(() => {
+    typingTimeoutRef.current = setTimeout(() => {
       if (sendTyping) {
         sendTyping(false);
       }
+      typingTimeoutRef.current = null;
     }, 3000);
   }, [sendTyping]);
 
@@ -310,8 +336,8 @@ export default function Chat({ user, onLogout }) {
 
         {/* Messages */}
         <div className="messages-column">
-          <ScrollArea.Root className="h-full">
-            <ScrollArea.Viewport ref={viewportRef} style={{ minHeight: '100%' }}>
+          <ScrollArea.Root className="h-full" style={{ display: 'flex', flex: 1, flexDirection: 'column' }}>
+            <ScrollArea.Viewport ref={viewportRef} style={{ height: '100%', minHeight: '100%' }}>
               {grouped.map(g => (
                 <div key={g.label}>
                   <div className="date-sep">{g.label}</div>

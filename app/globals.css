@@ -83,17 +83,10 @@ body.theme-dark {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden; /* Prevent horizontal scrolling */
+  /* Scrolling is handled by the Radix ScrollArea viewport to avoid nested scroll containers */
   background: var(--system-background);
   padding: 20px 28px;
   scroll-behavior: smooth;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.messages-column::-webkit-scrollbar {
-  display: none;
 }
 
 [data-radix-scroll-area-viewport] {
@@ -101,6 +94,8 @@ body.theme-dark {
   -ms-overflow-style: none;
   overflow-x: hidden !important; /* Prevent horizontal scroll in viewport */
   max-width: 100%; /* Constrain to container width */
+  /* Ensure the Radix viewport can expand to fill the available area */
+  height: 100%;
 }
 
 [data-radix-scroll-area-viewport]::-webkit-scrollbar {
@@ -338,26 +333,7 @@ body.theme-dark .bubble.peer {
   min-height: 48px; /* Minimum container height */
 }
 
-.chat-text-input {
-  flex: 1;
-  background: transparent !important;
-  border: none !important;
-  color: var(--system-label) !important;
-  font-size: 15px;
-  line-height: 1.4; /* Slightly increase line height for better positioning */
-  outline: none !important;
-  resize: none; /* Disable manual resize for textarea */
-  font-family: inherit; /* Use system font */
-  height: 22px; /* Set fixed initial height instead of min-height */
-  max-height: 120px; /* Maximum height before scrolling */
-  overflow-y: auto; /* Add scroll when content exceeds max-height */
-  overflow-x: hidden; /* Prevent horizontal scroll */
-  white-space: pre-wrap; /* Preserve line breaks */
-  word-wrap: break-word; /* Wrap long words */
-  padding: 0; /* Remove padding to let line-height handle spacing */
-  box-sizing: border-box;
-  display: block; /* Ensure proper block display */
-}
+/* Note: chat-text-input sizing consolidated later in file (min-height:44px). Removed duplicate earlier definition. */
 
 .chat-text-input::placeholder {
   color: var(--system-secondaryLabel) !important;
