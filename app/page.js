@@ -2,7 +2,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import Login from '../components/Login';
-import ChatSSE from '../components/ChatSSE';
 import ChatEnhanced from '../components/ChatEnhanced';
 import { AutoLogoutManager } from '../lib/autoLogout';
 
