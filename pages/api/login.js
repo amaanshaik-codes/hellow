@@ -3,9 +3,9 @@ import { kv } from '@vercel/kv';
 
 // Load user credentials from environment variables
 function getUserCredentials() {
-  // Fallback hashes for production (secure defaults)
-  const defaultAmmuHash = 'e7cf3ef4f17c3999a94f2c6f612e8a888e5b1026878e4e19398b23bd38ec221a'; // qwerty12345
-  const defaultVeroHash = 'e7cf3ef4f17c3999a94f2c6f612e8a888e5b1026878e4e19398b23bd38ec221a'; // qwerty12345
+  // Correct fallback hashes for production (qwerty12345)
+  const defaultAmmuHash = 'f6ee94ecb014f74f887b9dcc52daecf73ab3e3333320cadd98bcb59d895c52f5';
+  const defaultVeroHash = 'f6ee94ecb014f74f887b9dcc52daecf73ab3e3333320cadd98bcb59d895c52f5';
   
   return {
     ammu: {
