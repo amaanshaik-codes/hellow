@@ -6,7 +6,8 @@ export function usePragmaticChat(username, jwtToken) {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionLatency, setConnectionLatency] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
-  const [peerStatus, setPeerStatus] = useState('offline');
+  // peerPresence holds { isOnline: boolean, lastSeen: number | null }
+  const [peerPresence, setPeerPresence] = useState({ isOnline: false, lastSeen: null });
   const [stats, setStats] = useState(null);
   
   const messagingRef = useRef(null);
@@ -54,13 +55,15 @@ export function usePragmaticChat(username, jwtToken) {
 
     // Presence updates
     const unsubscribePresence = messaging.onPresence((data) => {
-      if (data.username !== username) { // Only track other user's presence
-        setPeerStatus(data.isOnline ? 'online' : 'offline');
+      // `data` shape may be: { username, isOnline, timestamp } or { onlineUsers: [...] }
+      if (data.username && data.username !== username) { // Only track other user's presence
+        const lastSeen = data.timestamp || Date.now();
+        setPeerPresence({ isOnline: !!data.isOnline, lastSeen: data.isOnline ? null : lastSeen });
         console.log('👤 [PRAGMATIC] Presence:', data);
       } else if (data.onlineUsers) {
         // Handle room-wide presence updates
         const otherUsers = data.onlineUsers.filter(u => u !== username);
-        setPeerStatus(otherUsers.length > 0 ? 'online' : 'offline');
+        setPeerPresence({ isOnline: otherUsers.length > 0, lastSeen: otherUsers.length > 0 ? null : Date.now() });
         console.log('👥 [PRAGMATIC] Room presence:', data.onlineUsers);
       }
     });
@@ -155,7 +158,7 @@ export function usePragmaticChat(username, jwtToken) {
     sendTyping,
     setPresence,
     isTyping,
-    peerStatus,
+  peerPresence,
     stats
   };
 }

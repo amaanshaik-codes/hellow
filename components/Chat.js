@@ -27,7 +27,7 @@ export default function Chat({ user, onLogout }) {
     sendTyping,
     setPresence,
     isTyping,
-    peerStatus,
+    peerPresence,
     stats
   } = usePragmaticChat(user.username, user.token);
 
@@ -43,7 +43,7 @@ export default function Chat({ user, onLogout }) {
   const viewportRef = useRef(null);
   const chatBottom = useRef(null);
   const typingTimeoutRef = useRef(null);
-
+  const resizeTimeoutRef = useRef(null);
     // Auto-scroll to bottom when new messages arrive, but only if user is near the bottom
     useEffect(() => {
       try {
@@ -75,6 +75,30 @@ export default function Chat({ user, onLogout }) {
       }
     }, [messages]);
 
+  // Prevent mobile address-bar/layout jumps by setting a CSS variable to the innerHeight
+  useEffect(() => {
+    const setAppHeight = () => {
+      try {
+        // Use a small debounce for frequent resize events
+        if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
+        resizeTimeoutRef.current = setTimeout(() => {
+          document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+        }, 50);
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    setAppHeight();
+    window.addEventListener('resize', setAppHeight);
+    window.addEventListener('orientationchange', setAppHeight);
+    return () => {
+      window.removeEventListener('resize', setAppHeight);
+      window.removeEventListener('orientationchange', setAppHeight);
+      if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
+    };
+  }, []);
+
   // Handle presence - set online when component mounts, offline when unmounts
   useEffect(() => {
     if (setPresence) {
@@ -104,6 +128,21 @@ export default function Chat({ user, onLogout }) {
       typingTimeoutRef.current = null;
     }, 3000);
   }, [sendTyping]);
+
+  // Keep input visible when keyboard opens on mobile and scroll messages to bottom
+  const handleInputFocus = useCallback(() => {
+    try {
+      // Small delay to allow mobile keyboard to open and viewport to stabilize
+      setTimeout(() => {
+        // Scroll the message viewport to bottom
+        const vp = viewportRef.current;
+        if (vp) vp.scrollTop = vp.scrollHeight;
+
+        // Also nudge the window scroll so the header/peer info can be revealed if browser UI is present
+        try { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); } catch (e) {}
+      }, 120);
+    } catch (e) {}
+  }, []);
 
   // Send message handler
   const handleSendMessage = useCallback(async (e) => {
@@ -259,6 +298,17 @@ export default function Chat({ user, onLogout }) {
     return `Connected${latencyText}`;
   };
 
+  // Helper to format relative time (e.g., "5m ago")
+  const formatRelative = (ts) => {
+    if (!ts) return null;
+    const delta = Math.floor((Date.now() - ts) / 1000);
+    if (delta < 5) return 'just now';
+    if (delta < 60) return `${delta}s ago`;
+    if (delta < 3600) return `${Math.floor(delta/60)}m ago`;
+    if (delta < 86400) return `${Math.floor(delta/3600)}h ago`;
+    return `${Math.floor(delta/86400)}d ago`;
+  };
+
   // Click outside handler for context menu
   useEffect(() => {
     const handleClickOutside = () => {
@@ -316,7 +366,15 @@ export default function Chat({ user, onLogout }) {
                 />
                 <div>
                   {formatConnectionStatus()}
-                  {peerStatus === 'online' ? <span className="ml-2">• Online</span> : peerStatus === 'offline' ? <span className="ml-2">• Offline</span> : null}
+                  {peerPresence && peerPresence.isOnline ? (
+                    <span className="ml-2">• Online</span>
+                  ) : (
+                    peerPresence && peerPresence.lastSeen ? (
+                      <span className="ml-2">• Last seen {formatRelative(peerPresence.lastSeen)}</span>
+                    ) : (
+                      <span className="ml-2">• Offline</span>
+                    )
+                  )}
                 </div>
               </div>
             </div>
@@ -595,14 +653,15 @@ export default function Chat({ user, onLogout }) {
         )}
 
         {/* Input Bar */}
-        <motion.div 
+        <motion.div
           className="input-bar-wrapper"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5, duration: 0.4 }}
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}
         >
-          <motion.form 
-            className="flex items-center gap-4 chat-input-bar" 
+          <motion.form
+            className="flex items-center gap-4 chat-input-bar"
             onSubmit={handleSendMessage}
             whileFocusWithin={{ scale: 1.02 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
@@ -612,6 +671,7 @@ export default function Chat({ user, onLogout }) {
               id="chat-input"
               className="chat-text-input flex-1"
               value={input}
+              onFocus={handleInputFocus}
               onChange={(e) => {
                 setInput(e.target.value);
                 sendTypingIndicator(); // Send typing indicator on input change
@@ -619,8 +679,8 @@ export default function Chat({ user, onLogout }) {
               onKeyDown={handleInputKeyDown}
               placeholder="Type your message..."
             />
-            <motion.button 
-              type="submit" 
+            <motion.button
+              type="submit"
               className="send-btn-modern"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -634,8 +694,8 @@ export default function Chat({ user, onLogout }) {
         {/* Connection Stats (Debug Info) */}
         {stats && (
           <div className="text-xs text-system-secondaryLabel p-2 border-t border-white-06">
-            Messages: {stats.messagesSent} sent, {stats.messagesReceived} received • 
-            Latency: {connectionLatency}ms • 
+            Messages: {stats.messagesSent} sent, {stats.messagesReceived} received •
+            Latency: {connectionLatency}ms •
             Connected: {isConnected ? 'Yes' : 'No'}
           </div>
         )}

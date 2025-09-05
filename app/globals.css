@@ -76,7 +76,9 @@ body.theme-dark {
 @media (prefers-color-scheme: dark){:root { --system-background:#000000; --system-secondaryBackground:#1C1C1E; --system-tertiaryBackground:#2C2C2E; --system-groupedBackground:#000000; --system-label:#FFFFFF; --system-secondaryLabel:#EBEBF5; --system-tertiaryLabel:#EBEBF5; --system-accent: var(--system-blue);} }
 .bg-system-background{background-color:var(--system-background);} .bg-system-secondaryBackground{background-color:var(--system-secondaryBackground);} .bg-system-tertiaryBackground{background-color:var(--system-tertiaryBackground);} .bg-system-groupedBackground{background-color:var(--system-groupedBackground);} .bg-system-accent{background-color:var(--system-accent);} .text-system-label{color:var(--system-label);} .text-system-secondaryLabel{color:var(--system-secondaryLabel);} .text-system-tertiaryLabel{color:var(--system-tertiaryLabel);} .bg-white-10{background-color:var(--white-10);} .bg-white-20{background-color:var(--white-20);} .bg-white-06{background-color:var(--white-06);} .bg-white-03{background-color:var(--white-03);} .border-white-10{border-color:var(--white-10);} .border-white-06{border-color:var(--white-06);} .rounded-apple{border-radius:20px;} .shadow-apple{box-shadow:0 8px 32px rgba(0,0,0,0.12),0 2px 8px rgba(0,0,0,0.08);} .backdrop-blur-apple{backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);} 
 .login-card{background:linear-gradient(180deg,var(--system-secondaryBackground),var(--system-tertiaryBackground)); border:1px solid var(--white-10); box-shadow:0 12px 48px rgba(0,0,0,0.15),0 4px 18px rgba(0,0,0,0.08);} .login-card button{color:var(--system-label);} .login-card button:hover{background:var(--white-10);} 
-.chat-wrapper-centered{display:flex;justify-content:center;align-items:center;padding:20px;} .chat-card{width:100%;max-width:800px;height:calc(100vh - 40px);background:linear-gradient(160deg,var(--system-secondaryBackground),var(--system-tertiaryBackground));border:1px solid var(--white-10);border-radius:28px;box-shadow:0 24px 80px -16px rgba(0,0,0,0.45),0 8px 28px rgba(0,0,0,0.28);overflow:hidden;display:flex;flex-direction:column;backdrop-filter:blur(28px) saturate(140%);-webkit-backdrop-filter:blur(28px) saturate(140%);} .chat-header-card{padding:14px 24px;background:linear-gradient(140deg,var(--system-secondaryBackground),var(--system-tertiaryBackground));border-bottom:1px solid var(--white-10);display:flex;justify-content:space-between;align-items:center;backdrop-filter:blur(26px) saturate(160%);-webkit-backdrop-filter:blur(26px) saturate(160%);} 
+.chat-wrapper-centered{display:flex;justify-content:center;align-items:center;padding:20px;height:var(--app-height,100vh);} 
+.chat-card{width:100%;max-width:800px;height:calc(var(--app-height,100vh) - 40px);background:linear-gradient(160deg,var(--system-secondaryBackground),var(--system-tertiaryBackground));border:1px solid var(--white-10);border-radius:28px;box-shadow:0 24px 80px -16px rgba(0,0,0,0.45),0 8px 28px rgba(0,0,0,0.28);overflow:hidden;display:flex;flex-direction:column;backdrop-filter:blur(28px) saturate(140%);-webkit-backdrop-filter:blur(28px) saturate(140%);} 
+.chat-header-card{padding:14px 24px;background:linear-gradient(140deg,var(--system-secondaryBackground),var(--system-tertiaryBackground));border-bottom:1px solid var(--white-10);display:flex;justify-content:space-between;align-items:center;backdrop-filter:blur(26px) saturate(160%);-webkit-backdrop-filter:blur(26px) saturate(160%);} 
 /* ==== MESSAGES CONTAINER ==== */
 
 .messages-column {
@@ -284,6 +286,49 @@ body.theme-dark .bubble.peer {
     padding: 7px 11px;
   }
 }
+
+/* Mobile-specific layout adjustments to avoid browser chrome/keyboard issues */
+@media (max-width: 800px) {
+  .chat-wrapper-centered {
+    padding: 12px 8px;
+    height: var(--app-height, 100vh);
+    align-items: stretch;
+  }
+
+  .chat-card {
+    max-width: 100%;
+    height: calc(var(--app-height, 100vh) - 12px);
+    border-radius: 14px;
+    margin: 0;
+  }
+
+  .chat-header-card {
+    padding: 10px 14px;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .chat-header-card .font-bold {
+    font-size: 16px;
+  }
+
+  /* Make the messages area occupy remaining space and allow natural page scroll so browser chrome can collapse */
+  .messages-column { padding: 14px 16px; }
+
+  /* Reduce input padding and increase touch targets */
+  .input-bar-wrapper { padding: 10px 12px 14px; }
+  .chat-input-bar { padding: 10px 12px; min-height: 52px; }
+  .chat-text-input { min-height: 44px; font-size: 15px; }
+
+  /* Ensure the chat-card doesn't overflow the viewport and allows inner scroll to function correctly */
+  .chat-card { min-height: 0; }
+
+  /* Sticky header so peer info remains visible when messages scroll */
+  .chat-header-card { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px); }
+}
+
+/* Use app-height when available for desktop too as a fallback */
+:root { --app-height: 100vh; }
 
 @media (max-width: 400px) {
   .bubble {
