@@ -1,6 +1,7 @@
 
 import './globals.css';
 import AppleProviders from '../components/AppleProviders';
+import CacheBuster from '../components/CacheBuster';
 
 export const metadata = {
   title: 'Hellow Chat',
@@ -31,6 +32,7 @@ export default function RootLayout({ children }) {
         <meta name="apple-mobile-web-app-title" content="Hellow" />
       </head>
       <body className="bg-system-background min-h-screen">
+        <CacheBuster />
         <AppleProviders>
           {children}
         </AppleProviders>
