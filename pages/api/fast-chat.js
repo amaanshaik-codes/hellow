@@ -5,13 +5,13 @@ import jwt from 'jsonwebtoken';
 import { broadcastToRoom } from './sse-chat';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   try {
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
-    const { action, room, message, username, isTyping, isOnline } = req.body;
+    const { action, room, message, username, isTyping, isOnline } = req.method === 'POST' ? req.body : req.query;
 
     if (!action || !room) {
       return res.status(400).json({ error: 'Missing action or room' });
@@ -52,6 +52,12 @@ export default async function handler(req, res) {
       
       case 'presence':
         return await handlePresence(res, room, username, isOnline, startTime);
+      
+      case 'getPresence':
+        return await handleGetPresence(res, room, startTime);
+      
+      case 'markOffline':
+        return await handleMarkOffline(res, room, username, req.body.lastSeen || Date.now(), startTime);
       
       default:
         return res.status(400).json({ error: 'Unknown action' });
@@ -204,5 +210,55 @@ async function updatePresenceInBackground(room, username, isOnline) {
     console.log(`👤 Presence updated: ${username} = ${isOnline}`);
   } catch (error) {
     console.error('Background presence update failed:', error);
+  }
+}
+
+// Get presence data for a room
+async function handleGetPresence(res, room, startTime) {
+  try {
+    const presenceKey = `room_presence_${room}`;
+    const presence = await kv.get(presenceKey) || {};
+    
+    const processingTime = Date.now() - startTime;
+    console.log(`📋 Presence data retrieved in ${processingTime}ms`);
+
+    return res.status(200).json({
+      success: true,
+      presence,
+      processingTime
+    });
+
+  } catch (error) {
+    console.error('Get presence error:', error);
+    return res.status(500).json({ error: 'Failed to get presence' });
+  }
+}
+
+// Mark a user as offline
+async function handleMarkOffline(res, room, username, lastSeen, startTime) {
+  try {
+    const presenceKey = `room_presence_${room}`;
+    const presence = await kv.get(presenceKey) || {};
+    
+    if (presence[username]) {
+      presence[username].isOnline = false;
+      presence[username].lastSeen = lastSeen;
+      
+      // Store with 1 hour expiry
+      await kv.setex(presenceKey, 3600, presence);
+      
+      console.log(`🔴 Marked ${username} as offline with lastSeen: ${new Date(lastSeen).toISOString()}`);
+    }
+    
+    const processingTime = Date.now() - startTime;
+
+    return res.status(200).json({
+      success: true,
+      processingTime
+    });
+
+  } catch (error) {
+    console.error('Mark offline error:', error);
+    return res.status(500).json({ error: 'Failed to mark offline' });
   }
 }

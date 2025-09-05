@@ -7,6 +7,7 @@ export function usePragmaticChat(username, jwtToken) {
   const [connectionLatency, setConnectionLatency] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
   const [peerStatus, setPeerStatus] = useState('offline');
+  const [peerLastSeen, setPeerLastSeen] = useState(null);
   const [stats, setStats] = useState(null);
   
   const messagingRef = useRef(null);
@@ -56,14 +57,55 @@ export function usePragmaticChat(username, jwtToken) {
     const unsubscribePresence = messaging.onPresence((data) => {
       if (data.username !== username) { // Only track other user's presence
         setPeerStatus(data.isOnline ? 'online' : 'offline');
+        if (data.lastSeen) {
+          setPeerLastSeen(data.lastSeen);
+        }
         console.log('👤 [PRAGMATIC] Presence:', data);
       } else if (data.onlineUsers) {
         // Handle room-wide presence updates
         const otherUsers = data.onlineUsers.filter(u => u !== username);
         setPeerStatus(otherUsers.length > 0 ? 'online' : 'offline');
         console.log('👥 [PRAGMATIC] Room presence:', data.onlineUsers);
+        
+        // Load detailed presence with lastSeen for offline users
+        if (otherUsers.length === 0) {
+          loadDetailedPresence();
+        }
       }
     });
+
+    // Function to load detailed presence with lastSeen
+    const loadDetailedPresence = async () => {
+      try {
+        const response = await fetch(`/api/fast-chat?action=getPresence&room=ammu-vero-private-room&username=${username}`, {
+          headers: {
+            'Authorization': `Bearer ${jwtToken}`
+          }
+        });
+        const data = await response.json();
+        
+        // Find the other user's presence data
+        const otherUser = username === 'ammu' ? 'vero' : 'ammu';
+        if (data.presence && data.presence[otherUser]) {
+          const otherPresence = data.presence[otherUser];
+          setPeerStatus(otherPresence.isOnline ? 'online' : 'offline');
+          setPeerLastSeen(otherPresence.lastSeen);
+          console.log('📋 [PRAGMATIC] Detailed presence loaded:', otherPresence);
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to load detailed presence:', error);
+      }
+    };
+
+    // Load initial presence
+    loadDetailedPresence();
+
+    // Set up periodic presence heartbeat (every 30 seconds)
+    const presenceHeartbeat = setInterval(() => {
+      if (messagingRef.current) {
+        messagingRef.current.sendPresenceUpdate(true);
+      }
+    }, 30000);
 
     // Stats monitoring
     const statsInterval = setInterval(() => {
@@ -81,6 +123,7 @@ export function usePragmaticChat(username, jwtToken) {
       unsubscribeTyping();
       unsubscribePresence();
       clearInterval(statsInterval);
+      clearInterval(presenceHeartbeat);
       messaging.disconnect();
       messagingRef.current = null;
     };
@@ -156,6 +199,7 @@ export function usePragmaticChat(username, jwtToken) {
     setPresence,
     isTyping,
     peerStatus,
+    peerLastSeen,
     stats
   };
 }
