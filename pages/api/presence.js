@@ -2,8 +2,12 @@
 import { kv } from '@vercel/kv';
 
 export default async function handler(req, res) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Enable CORS with restricted origins
+  const allowedOrigins = ['http://localhost:3000', 'https://helloww.vercel.app', 'https://hellow-git-main-amaanshaik-codes.vercel.app'];
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   

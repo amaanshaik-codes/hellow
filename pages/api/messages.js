@@ -5,8 +5,12 @@ import jwt from 'jsonwebtoken';
 export default async function handler(req, res) {
   const { method } = req;
   
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Enable CORS with restricted origins
+  const allowedOrigins = ['http://localhost:3000', 'https://helloww.vercel.app', 'https://hellow-git-main-amaanshaik-codes.vercel.app'];
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   
@@ -14,22 +18,40 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
   
-  // Simple demo auth for testing
-  const { room, username, limit, after } = req.query;
+  // JWT Authentication
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  let authenticatedUser;
+  try {
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    authenticatedUser = decoded.username;
+  } catch (error) {
+    console.error('JWT verification failed:', error);
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  
+  const { room, limit, after } = req.query;
   const roomId = room || 'ammu-vero-private-room';
   
   if (method === 'GET') {
-    return await handleGetMessages(req, res, roomId, limit, after);
+    return await handleGetMessages(req, res, roomId, limit, after, authenticatedUser);
   } else if (method === 'POST') {
-    return await handleSendMessage(req, res, roomId);
+    return await handleSendMessage(req, res, roomId, authenticatedUser);
   } else {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 }
 
-async function handleGetMessages(req, res, roomId, limit = 50, after = null) {
+async function handleGetMessages(req, res, roomId, limit = 50, after = null, authenticatedUser) {
   try {
-    console.log(`📚 [API/MESSAGES] Getting messages for room: ${roomId}`);
+    console.log(`📚 [API/MESSAGES] Getting messages for room: ${roomId} (user: ${authenticatedUser})`);
     
     const roomKey = `messages:${roomId}`;
     let messages = await kv.get(roomKey) || [];
@@ -76,20 +98,20 @@ async function handleGetMessages(req, res, roomId, limit = 50, after = null) {
   }
 }
 
-async function handleSendMessage(req, res, roomId) {
+async function handleSendMessage(req, res, roomId, authenticatedUser) {
   try {
-    const { text, username, reply_to } = req.body;
+    const { text, reply_to } = req.body;
     
-    if (!text?.trim() || !username) {
-      return res.status(400).json({ error: 'Text and username required' });
+    if (!text?.trim()) {
+      return res.status(400).json({ error: 'Message text required' });
     }
     
-    console.log(`💬 [API/MESSAGES] Sending message from ${username}: "${text}"`);
+    console.log(`💬 [API/MESSAGES] Sending message from ${authenticatedUser}: "${text}"`);
     
     const message = {
       id: `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       text: text.trim(),
-      username,
+      username: authenticatedUser, // Use authenticated user
       roomId,
       timestamp: Date.now(),
       replyTo: reply_to || null,

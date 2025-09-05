@@ -1,19 +1,29 @@
 import crypto from 'crypto';
 import { kv } from '@vercel/kv';
 
-// Exclusive profiles for Ammu and Vero
-const AUTHORIZED_USERS = {
-  ammu: {
-    password: 'qwerty12345',
-    displayName: 'Ammu',
-    avatar: '💕'
-  },
-  vero: {
-    password: 'qwerty12345', 
-    displayName: 'Vero',
-    avatar: '✨'
-  }
-};
+// Load user credentials from environment variables
+function getUserCredentials() {
+  return {
+    ammu: {
+      password: process.env.AMMU_PASSWORD_HASH || (() => {
+        throw new Error('AMMU_PASSWORD_HASH environment variable is required');
+      })(),
+      displayName: 'Ammu',
+      avatar: '💕'
+    },
+    vero: {
+      password: process.env.VERO_PASSWORD_HASH || (() => {
+        throw new Error('VERO_PASSWORD_HASH environment variable is required');
+      })(),
+      displayName: 'Vero',
+      avatar: '✨'
+    }
+  };
+}
+
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
 
 function signPayload(payload, secret) {
   try {
@@ -29,13 +39,16 @@ function signPayload(payload, secret) {
 
 function validateCredentials(username, password) {
   const normalizedUsername = (username || '').toLowerCase().trim();
+  const AUTHORIZED_USERS = getUserCredentials();
   
   // Only allow Ammu and Vero
   if (!AUTHORIZED_USERS[normalizedUsername]) {
     return { valid: false, message: 'Access denied. This is a private chat.' };
   }
-  
-  if (password !== AUTHORIZED_USERS[normalizedUsername].password) {
+
+  // Hash the provided password and compare
+  const hashedPassword = hashPassword(password);
+  if (hashedPassword !== AUTHORIZED_USERS[normalizedUsername].password) {
     return { valid: false, message: 'Invalid password. Please try again.' };
   }
   
