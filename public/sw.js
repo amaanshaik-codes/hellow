@@ -1,17 +1,13 @@
 // Service Worker for cache control and real-time updates
 const CACHE_NAME = 'hellow-realtime-v1';
-const REALTIME_PATHS = [
-  '/api/messages',
-  '/api/supabase',
-  '/_next/static/chunks/components_ChatEnhanced'
-];
+const STATIC_CACHE_PATHS = ['/manifest.json'];
 
 self.addEventListener('install', event => {
   console.log('📡 [SW] Installing service worker...');
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(['/manifest.json']))
+      .then(cache => cache.addAll(STATIC_CACHE_PATHS))
   );
 });
 
@@ -35,18 +31,15 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
   
-  // Don't cache real-time components and API calls
-  if (REALTIME_PATHS.some(path => url.pathname.includes(path))) {
-    console.log('📡 [SW] Bypassing cache for real-time:', url.pathname);
-    event.respondWith(
-      fetch(request, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
-      })
-    );
+  // Never intercept Supabase requests - let them pass through directly
+  if (url.hostname.includes('supabase.co')) {
+    console.log('📡 [SW] Bypassing SW for Supabase:', url.pathname);
+    return; // Don't call event.respondWith, let browser handle natively
+  }
+  
+  // Never intercept WebSocket upgrades
+  if (request.headers.get('upgrade') === 'websocket') {
+    console.log('📡 [SW] Bypassing SW for WebSocket');
     return;
   }
   

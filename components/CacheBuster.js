@@ -4,7 +4,7 @@ if (typeof window !== 'undefined') {
   console.log('🔄 [Cache] Clearing stale connections...');
   
   // Force reload if we detect stale cached components
-  const cacheVersion = '1.0.0-supabase-realtime';
+  const cacheVersion = '1.0.1-hybrid-messaging';
   const lastVersion = localStorage.getItem('hellow_cache_version');
   
   if (lastVersion !== cacheVersion) {
@@ -17,11 +17,13 @@ if (typeof window !== 'undefined') {
     }
   }
   
-  // Prevent browser from caching real-time components
+  // Disable service worker to prevent CORS issues
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      // Service worker registration failed, continue without it
-      console.log('📡 [Cache] Service worker not available');
+    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+      for(let registration of registrations) {
+        console.log('🧹 [Cache] Unregistering service worker to fix CORS');
+        registration.unregister();
+      }
     });
   }
 }

@@ -6,7 +6,7 @@ import * as ScrollArea from '@radix-ui/react-scroll-area';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { ExitIcon } from '@radix-ui/react-icons';
 import ThemeToggle from './ThemeToggle';
-import SupabaseManager from '../lib/supabaseManager';
+import AdvancedMessagingManager from '../lib/advancedMessaging';
 
 export default function ChatEnhanced({ user, onLogout }) {
   // Core state
@@ -24,6 +24,10 @@ export default function ChatEnhanced({ user, onLogout }) {
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   
+  // Advanced messaging state
+  const [messageStates, setMessageStates] = useState(new Map());
+  const [connectionMethod, setConnectionMethod] = useState('unknown');
+  
   // UI state
   const [editing, setEditing] = useState({ id: null, text: '' });
   const [replyTo, setReplyTo] = useState(null);
@@ -31,23 +35,23 @@ export default function ChatEnhanced({ user, onLogout }) {
   const [infoMsg, setInfoMsg] = useState(null);
   
   // Refs
-  const supabaseManagerRef = useRef(null);
+  const messagingManagerRef = useRef(null);
   const textareaRef = useRef(null);
   const viewportRef = useRef(null);
   const chatBottom = useRef(null);
   const typingTimeoutRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
 
-  // Initialize Supabase manager
+  // Initialize Advanced messaging manager
   useEffect(() => {
-    const initializeSupabase = async () => {
+    const initializeMessaging = async () => {
       try {
-        console.log('🚀 [Supabase] Initializing manager...');
-        supabaseManagerRef.current = new SupabaseManager(user.username, user.token);
+        console.log('🚀 [Advanced] Initializing advanced messaging manager...');
+        messagingManagerRef.current = new AdvancedMessagingManager(user.username, user.token);
         
         // Set up event handlers BEFORE connecting
-        supabaseManagerRef.current.onMessage = (message) => {
-          console.log('📨 [Supabase] New message received:', message);
+        messagingManagerRef.current.onMessage = (message) => {
+          console.log('📨 [Advanced] New message received:', message);
           setMessages(prev => {
             const exists = prev.find(m => m.id === message.id);
             if (exists) return prev;
@@ -55,14 +59,22 @@ export default function ChatEnhanced({ user, onLogout }) {
             return newMessages;
           });
           
+          // Update receipts based on message state
+          if (message.state) {
+            setReceipts(prev => ({
+              ...prev,
+              [message.id]: message.state
+            }));
+          }
+          
           // Auto-scroll to bottom
           setTimeout(() => {
             chatBottom.current?.scrollIntoView({ behavior: 'smooth' });
           }, 100);
         };
         
-        supabaseManagerRef.current.onPresence = (presenceData) => {
-          console.log('👥 [Supabase] Presence update:', presenceData);
+        messagingManagerRef.current.onPresence = (presenceData) => {
+          console.log('👥 [Advanced] Presence update:', presenceData);
           const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
           if (presenceData[otherUser]) {
             setPeerPresence({
@@ -72,47 +84,59 @@ export default function ChatEnhanced({ user, onLogout }) {
           }
         };
         
-        supabaseManagerRef.current.onTyping = (typingData) => {
-          console.log('⌨️ [Supabase] Typing update:', typingData);
+        messagingManagerRef.current.onTyping = (typingData) => {
+          console.log('⌨️ [Advanced] Typing update:', typingData);
           const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
           setIsTyping(typingData[otherUser]?.isTyping || false);
         };
         
-        supabaseManagerRef.current.onConnectionChange = (status) => {
-          console.log('🔗 [Supabase] Connection status:', status);
+        messagingManagerRef.current.onConnectionChange = (status) => {
+          console.log('🔗 [Advanced] Connection status:', status);
+          setConnectionMethod(status.method || 'unknown');
+          
           if (status.status === 'connected') {
             setConnectionStatus('connected');
             setReconnectAttempts(0);
           } else if (status.status === 'error') {
             setConnectionStatus('error');
-            // Attempt reconnection
             handleReconnect();
           } else {
             setConnectionStatus('connecting');
           }
         };
         
-        // Connect to Supabase
+        // Message state change handler for receipts
+        messagingManagerRef.current.onMessageStateChange = ({ messageId, state }) => {
+          console.log(`📊 [Advanced] Message ${messageId} state: ${state}`);
+          setReceipts(prev => ({
+            ...prev,
+            [messageId]: state
+          }));
+          
+          setMessageStates(prev => new Map(prev.set(messageId, state)));
+        };
+        
+        // Connect to messaging system
         setConnectionStatus('connecting');
-        await supabaseManagerRef.current.connect();
-        console.log('✅ [Supabase] Connected successfully');
+        await messagingManagerRef.current.connect();
+        console.log('✅ [Advanced] Connected successfully');
         
         // Load message history AFTER connecting
         await loadMessageHistory();
         
       } catch (error) {
-        console.error('❌ [Supabase] Initialization failed:', error);
+        console.error('❌ [Advanced] Initialization failed:', error);
         setConnectionStatus('error');
       }
     };
     
-    initializeSupabase();
+    initializeMessaging();
     
     // Cleanup on unmount
     return () => {
-      if (supabaseManagerRef.current) {
-        console.log('🧹 [Supabase] Cleaning up connection...');
-        supabaseManagerRef.current.disconnect();
+      if (messagingManagerRef.current) {
+        console.log('🧹 [Advanced] Cleaning up connection...');
+        messagingManagerRef.current.disconnect();
       }
       clearTimeout(typingTimeoutRef.current);
       clearTimeout(reconnectTimeoutRef.current);
@@ -133,11 +157,11 @@ export default function ChatEnhanced({ user, onLogout }) {
     
     reconnectTimeoutRef.current = setTimeout(async () => {
       try {
-        if (supabaseManagerRef.current) {
-          await supabaseManagerRef.current.connect();
+        if (messagingManagerRef.current) {
+          await messagingManagerRef.current.connect();
         }
       } catch (error) {
-        console.error('❌ [Supabase] Reconnection failed:', error);
+        console.error('❌ [Hybrid] Reconnection failed:', error);
       }
     }, delay);
   }, [reconnectAttempts]);
@@ -145,11 +169,11 @@ export default function ChatEnhanced({ user, onLogout }) {
   // Load message history
   const loadMessageHistory = async () => {
     try {
-      if (!supabaseManagerRef.current) return;
+      if (!messagingManagerRef.current) return;
       
-      console.log('📚 [Supabase] Loading message history...');
-      const history = await supabaseManagerRef.current.getMessages();
-      console.log(`📚 [Supabase] Loaded ${history.length} messages`);
+      console.log('📚 [Advanced] Loading message history...');
+      const history = await messagingManagerRef.current.getMessages();
+      console.log(`📚 [Advanced] Loaded ${history.length} messages`);
       
       setMessages(history);
       
@@ -178,7 +202,7 @@ export default function ChatEnhanced({ user, onLogout }) {
       }, 100);
       
     } catch (error) {
-      console.error('❌ [Supabase] Failed to load message history:', error);
+      console.error('❌ [Advanced] Failed to load message history:', error);
     }
   };
 
@@ -199,36 +223,36 @@ export default function ChatEnhanced({ user, onLogout }) {
 
   // Handle typing indicators
   const handleTyping = useCallback(() => {
-    if (supabaseManagerRef.current) {
-      supabaseManagerRef.current.sendTyping(true);
+    if (messagingManagerRef.current) {
+      messagingManagerRef.current.sendTyping(true);
     }
     
     // Clear typing indicator after 3 seconds
     clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
-      if (supabaseManagerRef.current) {
-        supabaseManagerRef.current.sendTyping(false);
+      if (messagingManagerRef.current) {
+        messagingManagerRef.current.sendTyping(false);
       }
     }, 3000);
   }, []);
 
-  // Message sending
+  // Message sending with optimistic UI
   const sendMessage = useCallback(async (e) => {
     e.preventDefault();
-    if (!input.trim() || !supabaseManagerRef.current) return;
+    if (!input.trim() || !messagingManagerRef.current) return;
 
     const messageText = input.trim();
     
-    console.log(`💬 [Supabase] Sending message: "${messageText}"`);
+    console.log(`💬 [Advanced] Sending message: "${messageText}"`);
 
     // Clear input immediately for better UX
     setInput('');
     setReplyTo(null);
     
     try {
-      // Send message via Supabase
-      const newMessage = await supabaseManagerRef.current.sendMessage(messageText, replyTo);
-      console.log('✅ [Supabase] Message sent successfully:', newMessage);
+      // Send message via advanced system (includes optimistic UI)
+      const newMessage = await messagingManagerRef.current.sendMessage(messageText, replyTo);
+      console.log('✅ [Advanced] Message sent successfully:', newMessage);
       
       // Add to local state immediately (optimistic update)
       setMessages(prev => {
@@ -242,7 +266,7 @@ export default function ChatEnhanced({ user, onLogout }) {
       localStorage.setItem(lastReadKey, new Date().toISOString());
       
     } catch (error) {
-      console.error('❌ [Supabase] Failed to send message:', error);
+      console.error('❌ [Advanced] Failed to send message:', error);
       // Re-add text to input if send failed
       setInput(messageText);
     }
