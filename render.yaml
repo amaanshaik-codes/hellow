@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: hellow-socket-server
+    env: docker
+    plan: starter
+    dockerfilePath: ./socket-server/Dockerfile
+    regions: [ "iad" ]
+    envVars:
+      - key: JWT_SECRET
+        sync: false
