@@ -87,11 +87,14 @@ export function usePragmaticChat(username, jwtToken) {
   }, [username, jwtToken]);
 
   // Send message function
-  const sendMessage = useCallback(async (text, replyTo = null) => {
+  const sendMessage = useCallback(async (text, replyTo = null, messageId = null) => {
     if (!messagingRef.current || !text?.trim()) return;
 
+    // Use provided messageId or generate fallback
+    const uniqueId = messageId || `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
     const tempMessage = {
-      id: `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      id: uniqueId,
       text: text.trim(),
       username,
       timestamp: Date.now(),
@@ -100,11 +103,19 @@ export function usePragmaticChat(username, jwtToken) {
     };
 
     // Add to UI immediately (optimistic update)
-    setMessages(prev => [...prev, tempMessage]);
+    setMessages(prev => {
+      // Check for duplicate message IDs to prevent duplicates
+      const exists = prev.find(msg => msg.id === uniqueId);
+      if (exists) {
+        console.log('🚫 [PRAGMATIC] Duplicate message prevented:', uniqueId);
+        return prev;
+      }
+      return [...prev, tempMessage];
+    });
 
     try {
-      console.log('💬 [PRAGMATIC] Sending message:', text);
-      const sentMessage = await messagingRef.current.sendMessage(text.trim(), replyTo);
+      console.log('💬 [PRAGMATIC] Sending message:', text, 'ID:', uniqueId);
+      const sentMessage = await messagingRef.current.sendMessage(text.trim(), replyTo, uniqueId);
       
       // Replace temp message with confirmed one
       setMessages(prev => prev.map(msg => 

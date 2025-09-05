@@ -8,6 +8,15 @@ import { ExitIcon } from '@radix-ui/react-icons';
 import ThemeToggle from './ThemeToggle';
 import { usePragmaticChat } from '../hooks/usePragmaticChat';
 
+// UUID generation for message deduplication
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 export default function Chat({ user, onLogout }) {
   // Use the pragmatic messaging hook
   const {
@@ -76,6 +85,8 @@ export default function Chat({ user, onLogout }) {
     if (!input.trim()) return;
 
     const messageText = input.trim();
+    const messageId = generateUUID(); // Generate unique ID for deduplication
+    
     setInput(''); // Clear input immediately for better UX
     setReplyTo(null);
 
@@ -85,7 +96,7 @@ export default function Chat({ user, onLogout }) {
     }
 
     try {
-      await sendPragmaticMessage(messageText, replyTo);
+      await sendPragmaticMessage(messageText, replyTo, messageId);
     } catch (error) {
       console.error('Failed to send message:', error);
       // Could show error toast here
