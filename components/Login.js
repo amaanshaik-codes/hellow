@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import * as Avatar from '@radix-ui/react-avatar';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { InfoCircledIcon, ArrowLeftIcon } from '@radix-ui/react-icons';
+import PasswordReset from './PasswordReset';
 
 const PROFILES = [
   { username: 'ammu', displayName: 'Ammu', avatar: '💕', bgColor: 'bg-pink-500' },
@@ -37,6 +38,7 @@ export default function Login({ onLogin }) {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [userStats, setUserStats] = useState({});
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
 
   // Get user stats (last login, unread count) for each profile
   useEffect(() => {
@@ -135,6 +137,27 @@ export default function Login({ onLogin }) {
     setSelectedProfile(null);
     setPassword('');
     setError('');
+    setShowPasswordReset(false);
+  }
+
+  const handlePasswordReset = () => {
+    setShowPasswordReset(true);
+    setError('');
+  };
+
+  const handleBackFromReset = () => {
+    setShowPasswordReset(false);
+    setError('');
+  };
+
+  // Show password reset component if requested
+  if (showPasswordReset && selectedProfile) {
+    return (
+      <PasswordReset 
+        onBack={handleBackFromReset}
+        username={selectedProfile.username}
+      />
+    );
   }
 
   if (!selectedProfile) {
@@ -232,6 +255,16 @@ export default function Login({ onLogin }) {
             className="px-6 py-3 rounded-apple font-semibold text-white bg-system-accent shadow-apple transition hover:bg-system-accent/90 focus:outline-none focus:ring-2 focus:ring-system-accent/50 flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? 'Signing In...' : 'Sign In'}
+          </button>
+        </div>
+
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={handlePasswordReset}
+            className="text-system-accent hover:text-system-accent/80 text-sm font-medium transition-colors"
+          >
+            Forgot Password?
           </button>
         </div>
         

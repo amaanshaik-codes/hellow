@@ -1,13 +1,13 @@
 import crypto from 'crypto';
 import { kv } from '@vercel/kv';
 
-// Load user credentials from environment variables
-function getUserCredentials() {
-  // Correct fallback hashes for production (qwerty12345)
+// Load user credentials from environment variables and storage
+async function getUserCredentials(username = null) {
+  // Default fallback hashes for production (qwerty12345)
   const defaultAmmuHash = 'f6ee94ecb014f74f887b9dcc52daecf73ab3e3333320cadd98bcb59d895c52f5';
   const defaultVeroHash = 'f6ee94ecb014f74f887b9dcc52daecf73ab3e3333320cadd98bcb59d895c52f5';
   
-  return {
+  const baseCredentials = {
     ammu: {
       password: process.env.AMMU_PASSWORD_HASH || defaultAmmuHash,
       displayName: 'Ammu',
@@ -19,6 +19,23 @@ function getUserCredentials() {
       avatar: '✨'
     }
   };
+
+  // If username is specified, check for updated password in KV storage
+  if (username) {
+    try {
+      const storageKey = `user_password_${username}`;
+      const passwordData = await kv.get(storageKey);
+      
+      if (passwordData && passwordData.hash && baseCredentials[username]) {
+        baseCredentials[username].password = passwordData.hash;
+      }
+    } catch (error) {
+      console.error('Failed to get updated password from storage:', error);
+      // Continue with default credentials
+    }
+  }
+  
+  return baseCredentials;
 }
 
 function hashPassword(password) {
@@ -37,9 +54,9 @@ function signPayload(payload, secret) {
   }
 }
 
-function validateCredentials(username, password) {
+async function validateCredentials(username, password) {
   const normalizedUsername = (username || '').toLowerCase().trim();
-  const AUTHORIZED_USERS = getUserCredentials();
+  const AUTHORIZED_USERS = await getUserCredentials(normalizedUsername);
   
   // Only allow Ammu and Vero
   if (!AUTHORIZED_USERS[normalizedUsername]) {
@@ -80,7 +97,7 @@ export default async function handler(req, res) {
     }
 
     // Validate credentials
-    const validation = validateCredentials(username, password);
+    const validation = await validateCredentials(username, password);
     if (!validation.valid) {
       return res.status(401).json({ 
         success: false, 
