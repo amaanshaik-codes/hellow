@@ -103,16 +103,11 @@ A hybrid architecture that combines:
 If you want to add file sharing with your own infrastructure:
 
 ### Phase 1: Basic Setup
-1. Follow `PROXMOX_SETUP.md` guide
-2. Set up one VM for file storage
-3. Configure domain name (files.hellow.local)
 
 ### Phase 2: Advanced Features
-- Image processing VM
-- Video thumbnail generation
-- Audio transcription
-- Document preview
-- Automatic virus scanning
+## Optional: External File Storage
+
+If you want to add file sharing with your own infrastructure or a third-party file server, set up a secure file server (S3, MinIO, or a self-hosted file server) and point the app configuration to it. Ensure CORS and authentication are configured correctly.
 
 ## 🔍 Troubleshooting
 

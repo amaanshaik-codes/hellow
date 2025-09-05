@@ -28,7 +28,6 @@ CREATE TABLE file_shares (
   file_url TEXT NOT NULL,
   download_url TEXT,
   thumbnail_url TEXT,
-  proxmox_path TEXT NOT NULL,
   message_text TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
