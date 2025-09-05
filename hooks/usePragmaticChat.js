@@ -20,14 +20,14 @@ export function usePragmaticChat(username, jwtToken) {
     const messaging = new PragmaticFastMessaging(username, jwtToken);
 
     // Connection status
-    messaging.onConnectionChange((connected, latency) => {
+    const unsubscribeConnection = messaging.onConnectionChange((connected, latency) => {
       setIsConnected(connected);
       setConnectionLatency(latency);
       console.log(`🔗 [PRAGMATIC] Connection: ${connected ? 'Connected' : 'Disconnected'} (${latency}ms)`);
     });
 
     // New messages
-    messaging.onMessage((message) => {
+    const unsubscribeMessages = messaging.onMessage((message) => {
       console.log('📨 [PRAGMATIC] New message:', message);
       setMessages(prev => {
         // Remove pending version if exists
@@ -40,18 +40,28 @@ export function usePragmaticChat(username, jwtToken) {
     });
 
     // Typing indicators
-    messaging.onTyping((data) => {
+    const unsubscribeTyping = messaging.onTyping((data) => {
       if (data.username !== username) { // Only show other user's typing
         setIsTyping(data.isTyping);
         console.log('⌨️ [PRAGMATIC] Typing:', data);
+        
+        // Auto-clear typing indicator after 5 seconds
+        if (data.isTyping) {
+          setTimeout(() => setIsTyping(false), 5000);
+        }
       }
     });
 
     // Presence updates
-    messaging.onPresence((data) => {
+    const unsubscribePresence = messaging.onPresence((data) => {
       if (data.username !== username) { // Only track other user's presence
-        setPeerStatus(data.status);
+        setPeerStatus(data.isOnline ? 'online' : 'offline');
         console.log('👤 [PRAGMATIC] Presence:', data);
+      } else if (data.onlineUsers) {
+        // Handle room-wide presence updates
+        const otherUsers = data.onlineUsers.filter(u => u !== username);
+        setPeerStatus(otherUsers.length > 0 ? 'online' : 'offline');
+        console.log('👥 [PRAGMATIC] Room presence:', data.onlineUsers);
       }
     });
 
@@ -66,6 +76,10 @@ export function usePragmaticChat(username, jwtToken) {
     // Cleanup
     return () => {
       console.log('🧹 [PRAGMATIC] Cleaning up...');
+      unsubscribeConnection();
+      unsubscribeMessages();
+      unsubscribeTyping();
+      unsubscribePresence();
       clearInterval(statsInterval);
       messaging.disconnect();
       messagingRef.current = null;
@@ -110,11 +124,25 @@ export function usePragmaticChat(username, jwtToken) {
     }
   }, [username]);
 
+  // Send typing indicator
+  const sendTyping = useCallback((isTyping = true) => {
+    if (!messagingRef.current) return;
+    messagingRef.current.sendTyping(isTyping);
+  }, []);
+
+  // Send presence update
+  const setPresence = useCallback((isOnline = true) => {
+    if (!messagingRef.current) return;
+    messagingRef.current.sendPresenceUpdate(isOnline);
+  }, []);
+
   return {
     messages,
     isConnected,
     connectionLatency,
     sendMessage,
+    sendTyping,
+    setPresence,
     isTyping,
     peerStatus,
     stats

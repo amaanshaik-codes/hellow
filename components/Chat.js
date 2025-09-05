@@ -15,6 +15,8 @@ export default function Chat({ user, onLogout }) {
     isConnected,
     connectionLatency,
     sendMessage: sendPragmaticMessage,
+    sendTyping,
+    setPresence,
     isTyping,
     peerStatus,
     stats
@@ -39,6 +41,35 @@ export default function Chat({ user, onLogout }) {
     }
   }, [messages]);
 
+  // Handle presence - set online when component mounts, offline when unmounts
+  useEffect(() => {
+    if (setPresence) {
+      setPresence(true); // Set online when mounting
+      
+      // Set offline when unmounting
+      return () => {
+        setPresence(false);
+      };
+    }
+  }, [setPresence]);
+
+  // Send typing indicator
+  const sendTypingIndicator = useCallback(() => {
+    if (sendTyping) {
+      sendTyping(true);
+    }
+    
+    // Clear existing timeout
+    clearTimeout(window.typingTimeout);
+    
+    // Auto-stop typing after 3 seconds
+    window.typingTimeout = setTimeout(() => {
+      if (sendTyping) {
+        sendTyping(false);
+      }
+    }, 3000);
+  }, [sendTyping]);
+
   // Send message handler
   const handleSendMessage = useCallback(async (e) => {
     e.preventDefault();
@@ -47,6 +78,11 @@ export default function Chat({ user, onLogout }) {
     const messageText = input.trim();
     setInput(''); // Clear input immediately for better UX
     setReplyTo(null);
+
+    // Stop typing indicator when sending
+    if (sendTyping) {
+      sendTyping(false);
+    }
 
     try {
       await sendPragmaticMessage(messageText, replyTo);
@@ -530,7 +566,10 @@ export default function Chat({ user, onLogout }) {
               id="chat-input"
               className="chat-text-input flex-1"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                sendTypingIndicator(); // Send typing indicator on input change
+              }}
               onKeyDown={handleInputKeyDown}
               placeholder="Type your message..."
             />
