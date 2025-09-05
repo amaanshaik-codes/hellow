@@ -4,17 +4,14 @@ import { kv } from '@vercel/kv';
 import jwt from 'jsonwebtoken';
 import { broadcastToRoom } from './sse-chat';
 
-// Use a single constant for the room name everywhere
-const HELLOW_ROOM = 'ammu-vero-private-room';
-
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   try {
@@ -38,7 +35,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
-    const { action, room, message, username, isTyping, isOnline } = req.body;
+    const { action, room, message, username, isTyping, isOnline } = req.method === 'POST' ? req.body : req.query;
 
     if (!action || !room) {
       return res.status(400).json({ error: 'Missing action or room' });
@@ -46,15 +43,25 @@ export default async function handler(req, res) {
 
     const startTime = Date.now();
 
-    // Always use the constant room name
-    const safeRoom = HELLOW_ROOM;
     switch (action) {
       case 'send_message':
-        return await handleSendMessage(res, safeRoom, message, decodedToken, startTime);
+        return await handleSendMessage(res, room, message, decodedToken, startTime);
+      
       case 'typing':
-        return await handleTyping(res, safeRoom, username, isTyping, startTime);
+        return await handleTyping(res, room, username, isTyping, startTime);
+      
       case 'presence':
-        return await handlePresence(res, safeRoom, username, isOnline, startTime);
+        return await handlePresence(res, room, username, isOnline, startTime);
+      
+      case 'getPresence':
+        return await handleGetPresence(res, room, startTime);
+      
+      case 'markOffline':
+        return await handleMarkOffline(res, room, username, req.body.lastSeen || Date.now(), startTime);
+      
+      case 'getMessages':
+        return await handleGetMessages(res, room, req.query.since || 0, startTime);
+      
       default:
         return res.status(400).json({ error: 'Unknown action' });
     }
@@ -85,11 +92,11 @@ async function handleSendMessage(res, room, message, decodedToken, startTime) {
     // Store in database (non-blocking for speed)
     storeMessageInBackground(room, messageData);
 
-  // Broadcast immediately to all connected users
-  const broadcastCount = broadcastToRoom(room, messageData, 'message');
-  console.log(`📡 [API] Broadcasting message to room: ${room}, users:`, broadcastCount);
-  const processingTime = Date.now() - startTime;
-  console.log(`📤 Message processed in ${processingTime}ms, broadcasted to ${broadcastCount} users`);
+    // Broadcast immediately to all connected users
+    const broadcastCount = broadcastToRoom(room, messageData, 'message');
+    
+    const processingTime = Date.now() - startTime;
+    console.log(`📤 Message processed in ${processingTime}ms, broadcasted to ${broadcastCount} users`);
 
     return res.status(200).json({
       success: true,
@@ -206,5 +213,83 @@ async function updatePresenceInBackground(room, username, isOnline) {
     console.log(`👤 Presence updated: ${username} = ${isOnline}`);
   } catch (error) {
     console.error('Background presence update failed:', error);
+  }
+}
+
+// Get presence data for a room
+async function handleGetPresence(res, room, startTime) {
+  try {
+    const presenceKey = `room_presence_${room}`;
+    const presence = await kv.get(presenceKey) || {};
+    
+    const processingTime = Date.now() - startTime;
+    console.log(`📋 Presence data retrieved in ${processingTime}ms`);
+
+    return res.status(200).json({
+      success: true,
+      presence,
+      processingTime
+    });
+
+  } catch (error) {
+    console.error('Get presence error:', error);
+    return res.status(500).json({ error: 'Failed to get presence' });
+  }
+}
+
+// Mark a user as offline
+async function handleMarkOffline(res, room, username, lastSeen, startTime) {
+  try {
+    const presenceKey = `room_presence_${room}`;
+    const presence = await kv.get(presenceKey) || {};
+    
+    if (presence[username]) {
+      presence[username].isOnline = false;
+      presence[username].lastSeen = lastSeen;
+      
+      // Store with 1 hour expiry
+      await kv.setex(presenceKey, 3600, presence);
+      
+      console.log(`🔴 Marked ${username} as offline with lastSeen: ${new Date(lastSeen).toISOString()}`);
+    }
+    
+    const processingTime = Date.now() - startTime;
+
+    return res.status(200).json({
+      success: true,
+      processingTime
+    });
+
+  } catch (error) {
+    console.error('Mark offline error:', error);
+    return res.status(500).json({ error: 'Failed to mark offline' });
+  }
+}
+
+// Get recent messages since a timestamp
+async function handleGetMessages(res, room, since, startTime) {
+  try {
+    const messagesKey = `room_messages_${room}`;
+    const messages = await kv.get(messagesKey) || [];
+    
+    // Filter messages since the provided timestamp
+    const sinceTime = parseInt(since) || 0;
+    const recentMessages = messages
+      .filter(msg => msg.timestamp > sinceTime)
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-50); // Limit to last 50 messages
+    
+    const processingTime = Date.now() - startTime;
+    console.log(`📦 Retrieved ${recentMessages.length} messages since ${since} in ${processingTime}ms`);
+
+    return res.status(200).json({
+      success: true,
+      messages: recentMessages,
+      processingTime
+    });
+
+  } catch (error) {
+    console.error('Get messages error:', error);
+    return res.status(500).json({ error: 'Failed to get messages' });
   }
 }

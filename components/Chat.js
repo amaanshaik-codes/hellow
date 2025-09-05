@@ -28,7 +28,6 @@ export default function Chat({ user, onLogout }) {
     setPresence,
     isTyping,
     peerStatus,
-    peerLastSeen,
     stats
   } = usePragmaticChat(user.username, user.token);
 
@@ -201,24 +200,6 @@ export default function Chat({ user, onLogout }) {
     return { position, samePrev: samePrevUser };
   }, []);
 
-  // Helper function to format last seen time
-  const formatLastSeen = useCallback((lastSeenTime) => {
-    if (!lastSeenTime) return 'some time ago';
-    
-    const now = Date.now();
-    const lastSeen = lastSeenTime;
-    const diffMs = now - lastSeen;
-    const diffMins = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return new Date(lastSeen).toLocaleDateString();
-  }, []);
-
   // Group messages by date
   const grouped = useMemo(() => {
     const groups = [];
@@ -301,12 +282,7 @@ export default function Chat({ user, onLogout }) {
                   isConnected ? 'bg-green-500' : 'bg-yellow-500'
                 }`} />
                 {formatConnectionStatus()}
-                {peerStatus === 'online' 
-                  ? ' • Online' 
-                  : peerStatus === 'offline' 
-                    ? ` • Last seen ${formatLastSeen(peerLastSeen)}`
-                    : ''
-                }
+                {peerStatus === 'online' ? ' • Online' : peerStatus === 'offline' ? ' • Offline' : ''}
               </div>
             </div>
           </div>

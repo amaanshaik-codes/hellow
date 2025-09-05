@@ -2,7 +2,9 @@
 // Uses proven SSE technology that works reliably
 import { kv } from '@vercel/kv';
 
-// In-memory connections for active users
+
+// Use a single constant for the room name everywhere
+const HELLOW_ROOM = 'ammu-vero-private-room';
 const activeConnections = new Map();
 const roomSubscriptions = new Map();
 
@@ -11,8 +13,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { room, username, lastEventId } = req.query;
 
+  let { room, username, lastEventId } = req.query;
+  // Always use the constant room name
+  room = HELLOW_ROOM;
   if (!room || !username) {
     return res.status(400).json({ error: 'Missing room or username' });
   }

@@ -15,3 +15,4 @@ uploads/
 *.log
 # Local override files
 .local.env
+.vercel
