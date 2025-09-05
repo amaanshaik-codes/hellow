@@ -33,6 +33,7 @@ export default function Chat({ user, onLogout }) {
 
   // UI state
   const [input, setInput] = useState('');
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const [editing, setEditing] = useState({ id: null, text: '' });
   const [replyTo, setReplyTo] = useState(null);
   const [context, setContext] = useState(null);
@@ -74,6 +75,24 @@ export default function Chat({ user, onLogout }) {
         console.warn('Auto-scroll failed:', e);
       }
     }, [messages]);
+
+    // Collapse header on scroll to give more vertical space on mobile
+    useEffect(() => {
+      const vp = viewportRef.current;
+      if (!vp) return;
+
+      let lastTop = 0;
+      const onScroll = () => {
+        const top = vp.scrollTop || 0;
+        // Collapse when scrolled down beyond 40px
+        if (top > 40) setHeaderCollapsed(true);
+        else setHeaderCollapsed(false);
+        lastTop = top;
+      };
+
+      vp.addEventListener('scroll', onScroll);
+      return () => vp.removeEventListener('scroll', onScroll);
+    }, []);
 
   // Prevent mobile address-bar/layout jumps by setting a CSS variable to the innerHeight
   useEffect(() => {
@@ -141,7 +160,14 @@ export default function Chat({ user, onLogout }) {
         // Also nudge the window scroll so the header/peer info can be revealed if browser UI is present
         try { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); } catch (e) {}
       }, 120);
+      // when focusing input, collapse header to maximize space
+      setHeaderCollapsed(true);
     } catch (e) {}
+  }, []);
+
+  // restore header after input blur
+  const handleInputBlur = useCallback(() => {
+    setTimeout(() => setHeaderCollapsed(false), 300);
   }, []);
 
   // Send message handler
@@ -285,6 +311,28 @@ export default function Chat({ user, onLogout }) {
     return groups;
   }, [messages]);
 
+  // Lightweight mobile optimization: only render last N messages (flatten then regroup)
+  const visibleGrouped = useMemo(() => {
+    try {
+      const FLATTENED = messages || [];
+      const MAX = 80;
+      const visible = FLATTENED.length > MAX ? FLATTENED.slice(-MAX) : FLATTENED;
+      const groups = [];
+      visible.forEach(msg => {
+        const d = new Date(msg.timestamp);
+        const label = d.toLocaleDateString(undefined, {
+          weekday: 'short', day: '2-digit', month: 'short'
+        });
+        const last = groups[groups.length - 1];
+        if (!last || last.label !== label) groups.push({ label, items: [msg] });
+        else last.items.push(msg);
+      });
+      return groups;
+    } catch (e) {
+      return grouped;
+    }
+  }, [messages, grouped]);
+
   // Get peer name
   const otherUser = user.username === 'ammu' ? 'vero' : 'ammu';
   const DEMO_USERS = { ammu: 'Ammu', vero: 'Vero' };
@@ -405,15 +453,15 @@ export default function Chat({ user, onLogout }) {
         <div className="messages-column" style={{ display: 'flex', flex: '1 1 auto', minHeight: 0, flexDirection: 'column' }}>
           <ScrollArea.Root className="messages-scroll-root" style={{ display: 'flex', flex: 1, minHeight: 0, flexDirection: 'column' }}>
             <ScrollArea.Viewport ref={viewportRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-              {grouped.map(g => (
-                <div key={g.label}>
-                  <div className="date-sep">{g.label}</div>
+              {visibleGrouped.map((g, gi) => (
+                <div key={`${g.label}-${gi}`} className="date-group">
+                  <div className="date-divider text-system-secondaryLabel text-xs py-2 text-center">{g.label}</div>
                   {g.items.map((msg, idx) => {
                     const { position, samePrev } = sequenceInfo(g.items, idx);
                     const showHeader = position === 'single' || position === 'first';
                     const bubbleOwnerClass = msg.username === user.username ? 'me' : 'peer';
                     const seqClass = `seq-${position}`;
-                    
+
                     return (
                       <AnimatePresence mode="popLayout" key={msg.id}>
                         <motion.div
@@ -425,7 +473,7 @@ export default function Chat({ user, onLogout }) {
                             stiffness: 300, 
                             damping: 25, 
                             mass: 0.8,
-                            delay: idx * 0.05 
+                            delay: idx * 0.02 
                           }}
                         >
                           <div 
@@ -460,7 +508,7 @@ export default function Chat({ user, onLogout }) {
                                   className={`bubble ${bubbleOwnerClass} ${seqClass} ${msg.username === user.username ? 'me' : 'peer'}`}
                                   style={{ 
                                     cursor: 'context-menu',
-                                    animationDelay: `${idx * 0.05}s`
+                                    animationDelay: `${idx * 0.02}s`
                                   }}
                                   onContextMenu={e => {
                                     e.preventDefault();
@@ -672,6 +720,7 @@ export default function Chat({ user, onLogout }) {
               className="chat-text-input flex-1"
               value={input}
               onFocus={handleInputFocus}
+              onBlur={handleInputBlur}
               onChange={(e) => {
                 setInput(e.target.value);
                 sendTypingIndicator(); // Send typing indicator on input change
@@ -693,7 +742,7 @@ export default function Chat({ user, onLogout }) {
 
         {/* Connection Stats (Debug Info) */}
         {stats && (
-          <div className="text-xs text-system-secondaryLabel p-2 border-t border-white-06">
+          <div className="connection-stats-footer text-xs text-system-secondaryLabel p-2 border-t border-white-06">
             Messages: {stats.messagesSent} sent, {stats.messagesReceived} received •
             Latency: {connectionLatency}ms •
             Connected: {isConnected ? 'Yes' : 'No'}
