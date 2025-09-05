@@ -68,6 +68,7 @@ export default async function handler(req, res) {
   }
 }
 
+
 async function handleSendMessage(res, room, message, decodedToken, startTime) {
   if (!message || !message.text?.trim()) {
     return res.status(400).json({ error: 'Message text is required' });
@@ -85,11 +86,11 @@ async function handleSendMessage(res, room, message, decodedToken, startTime) {
     // Store in database (non-blocking for speed)
     storeMessageInBackground(room, messageData);
 
-  // Broadcast immediately to all connected users
-  const broadcastCount = broadcastToRoom(room, messageData, 'message');
-  console.log(`📡 [API] Broadcasting message to room: ${room}, users:`, broadcastCount);
-  const processingTime = Date.now() - startTime;
-  console.log(`📤 Message processed in ${processingTime}ms, broadcasted to ${broadcastCount} users`);
+    // Broadcast immediately to all connected users
+    const broadcastCount = broadcastToRoom(room, messageData, 'message');
+    console.log(`📡 [API] Broadcasting message to room: ${room}, users:`, broadcastCount);
+    const processingTime = Date.now() - startTime;
+    console.log(`📤 Message processed in ${processingTime}ms, broadcasted to ${broadcastCount} users`);
 
     return res.status(200).json({
       success: true,
@@ -101,6 +102,22 @@ async function handleSendMessage(res, room, message, decodedToken, startTime) {
   } catch (error) {
     console.error('Message handling error:', error);
     return res.status(500).json({ error: 'Failed to send message' });
+  }
+}
+
+// Store message in Vercel KV, keeping only the last 100 messages per room
+async function storeMessageInBackground(room, messageData) {
+  try {
+    const key = `room_messages_${room}`;
+    let messages = await kv.get(key) || [];
+    // Remove any duplicate by id
+    messages = messages.filter(m => m.id !== messageData.id);
+    messages.push(messageData);
+    // Keep only the last 100 messages
+    if (messages.length > 100) messages = messages.slice(-100);
+    await kv.set(key, messages);
+  } catch (err) {
+    console.error('Failed to store message in KV:', err);
   }
 }
 
