@@ -58,11 +58,26 @@ export default async function handler(req, res) {
   // Send any missed messages if lastEventId is provided
   if (lastEventId) {
     try {
-      await sendMissedMessages(res, room, lastEventId);
+      await sendMissedMessages(res, room, lastEventId, connectionId);
     } catch (error) {
       console.error('Failed to send missed messages:', error);
     }
   }
+
+  // Start a KV poller to deliver messages from other server instances
+  const pollInterval = 1000; // ms
+  const poller = setInterval(async () => {
+    try {
+      const conn = activeConnections.get(connectionId);
+      const last = conn?.lastSentTimestamp || lastEventId || 0;
+      await sendMissedMessages(res, room, last, connectionId);
+    } catch (err) {
+      console.error('Poller error:', err);
+    }
+  }, pollInterval);
+
+  // Store poller reference so cleanup can clear it
+  activeConnections.get(connectionId).poller = poller;
 
   // Send current online users
   const onlineUsers = Array.from(roomSubscriptions.get(room) || [])
@@ -103,7 +118,7 @@ export default async function handler(req, res) {
   activeConnections.get(connectionId).heartbeat = heartbeat;
 }
 
-async function sendMissedMessages(res, room, lastEventId) {
+async function sendMissedMessages(res, room, lastEventId, connectionId = null) {
   try {
     // Get recent messages from KV storage
     const messages = await kv.get(`room_messages_${room}`) || [];
@@ -117,9 +132,14 @@ async function sendMissedMessages(res, room, lastEventId) {
       res.write(`event: message\n`);
       res.write(`id: ${message.timestamp}\n`);
       res.write(`data: ${JSON.stringify(message)}\n\n`);
+      // Update per-connection last sent timestamp
+      if (connectionId) {
+        const conn = activeConnections.get(connectionId);
+        if (conn) conn.lastSentTimestamp = message.timestamp;
+      }
     }
 
-    console.log(`📬 Sent ${missedMessages.length} missed messages`);
+    if (missedMessages.length > 0) console.log(`📬 Sent ${missedMessages.length} missed messages to ${connectionId || 'unknown'}`);
   } catch (error) {
     console.error('Failed to retrieve missed messages:', error);
   }
@@ -133,6 +153,15 @@ function cleanupConnection(connectionId, room) {
       clearInterval(connection.heartbeat);
     }
     activeConnections.delete(connectionId);
+  }
+
+  // Clear any poller if present
+  try {
+    if (connection && connection.poller) {
+      clearInterval(connection.poller);
+    }
+  } catch (e) {
+    console.warn('Failed to clear poller for', connectionId, e);
   }
 
   // Remove from room subscriptions
