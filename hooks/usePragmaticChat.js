@@ -161,6 +161,8 @@ export function usePragmaticChat(username, jwtToken) {
   peerPresence,
     stats
   };
+  // also expose attachPromiseForMessageId for advanced reconciliation
+  // (available as messagingRef.current.attachPromiseForMessageId)
 }
 
 export default usePragmaticChat;

@@ -325,6 +325,16 @@ body.theme-dark .bubble.peer {
 
   /* Sticky header so peer info remains visible when messages scroll */
   .chat-header-card { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px); }
+  
+  /* Hide connection stats on mobile to save screen space */
+  .connection-stats-footer { display: none; }
+
+  /* Prevent body/page scrollbars inside the chat experience */
+  html, body { overflow: hidden; height: 100%; }
+  body { -webkit-overflow-scrolling: touch; }
+  
+  /* Make the radix viewport the only scrollable area */
+  [data-radix-scroll-area-viewport] { height: calc(var(--app-height, 100vh) - 140px) !important; }
 }
 
 /* Use app-height when available for desktop too as a fallback */

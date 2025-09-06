@@ -2,6 +2,7 @@
 import './globals.css';
 import AppleProviders from '../components/AppleProviders';
 import CacheBuster from '../components/CacheBuster';
+import MobileSocketPreconnect from '../components/MobileSocketPreconnect';
 
 export const metadata = {
   title: 'Hellow Chat',
@@ -34,6 +35,8 @@ export default function RootLayout({ children }) {
       <body className="bg-system-background min-h-screen">
         <CacheBuster />
         <AppleProviders>
+          {/* Preconnect a short-lived socket on app mount to warm up server-side socket server */}
+          <MobileSocketPreconnect />
           {children}
         </AppleProviders>
       </body>

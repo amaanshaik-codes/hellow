@@ -409,19 +409,16 @@ export default function Chat({ user, onLogout }) {
                     width: 8,
                     height: 8,
                     borderRadius: 9999,
-                    backgroundColor: isConnected ? 'var(--status-online, #16a34a)' : 'var(--status-offline, #d97706)'
+                    backgroundColor: peerPresence && peerPresence.isOnline ? 'var(--status-online, #16a34a)' : 'var(--status-offline, #d97706)'
                   }}
                 />
                 <div>
-                  {formatConnectionStatus()}
                   {peerPresence && peerPresence.isOnline ? (
-                    <span className="ml-2">• Online</span>
+                    <span className="ml-2">Online</span>
+                  ) : (peerPresence && peerPresence.lastSeen) ? (
+                    <span className="ml-2">Last seen {formatRelative(peerPresence.lastSeen)}</span>
                   ) : (
-                    peerPresence && peerPresence.lastSeen ? (
-                      <span className="ml-2">• Last seen {formatRelative(peerPresence.lastSeen)}</span>
-                    ) : (
-                      <span className="ml-2">• Offline</span>
-                    )
+                    <span className="ml-2">Offline</span>
                   )}
                 </div>
               </div>
