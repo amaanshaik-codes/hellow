@@ -81,6 +81,32 @@ export default function Chat({ user, onLogout }) {
   const resizeTimeoutRef = useRef(null);
   const readObserverRef = useRef(null);
   const readSentRef = useRef(new Set());
+  const visibilityCheckRef = useRef(null);
+
+  const markVisibleUnread = useCallback(() => {
+    try {
+      const root = viewportRef.current;
+      if (!root || !sendReadReceipt) return;
+      const rect = root.getBoundingClientRect();
+      const MIN_VIS = 0.55; // 55% visible
+      const candidates = Array.from(root.querySelectorAll('[data-owner="peer"][data-mid]'));
+      candidates.forEach(el => {
+        const mid = el.getAttribute('data-mid');
+        if (!mid || readSentRef.current.has(mid)) return;
+        const r = el.getBoundingClientRect();
+        const height = r.height || 1;
+        const visible = Math.min(rect.bottom, r.bottom) - Math.max(rect.top, r.top);
+        const ratio = visible / height;
+        if (ratio >= MIN_VIS) {
+          const m = messages.find(mm => mm.id === mid);
+            if (m) {
+              readSentRef.current.add(mid);
+              sendReadReceipt(m);
+            }
+        }
+      });
+    } catch (e) {}
+  }, [messages, sendReadReceipt]);
 
   // Auto-scroll to bottom when new messages arrive, but only if user is near the bottom
   useEffect(() => {
@@ -436,40 +462,28 @@ export default function Chat({ user, onLogout }) {
     }
   }, [context]);
 
-  // Observe inbound (peer) messages as they come into view to trigger read receipts
+  // Visibility driven read marking (debounced)
   useEffect(() => {
-    try {
-      const root = viewportRef.current;
-      if (!root || !sendReadReceipt) return;
-      if (readObserverRef.current) {
-        readObserverRef.current.disconnect();
-      }
-      readObserverRef.current = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const el = entry.target;
-            const mid = el.getAttribute('data-mid');
-            const owner = el.getAttribute('data-owner');
-            if (owner === 'peer' && mid) {
-              const msg = messages.find(m => m.id === mid);
-              if (msg && !readSentRef.current.has(mid)) {
-                // Avoid duplicate rapid sends until receipt returns
-                readSentRef.current.add(mid);
-                sendReadReceipt(msg);
-              }
-            }
-          }
-        });
-      }, { root, threshold: 0.6 });
+    if (visibilityCheckRef.current) clearTimeout(visibilityCheckRef.current);
+    visibilityCheckRef.current = setTimeout(markVisibleUnread, 120);
+  }, [messages, markVisibleUnread]);
 
-      // Only observe a subset (recent peer messages) for performance
-      const peerEls = Array.from(root.querySelectorAll('[data-owner="peer"]'));
-      peerEls.slice(-40).forEach(el => readObserverRef.current.observe(el));
-      return () => readObserverRef.current && readObserverRef.current.disconnect();
-    } catch (err) {
-      console.warn('Read receipt observer error', err);
-    }
-  }, [messages, sendReadReceipt]);
+  useEffect(() => {
+    const root = viewportRef.current;
+    if (!root) return;
+    const handler = () => {
+      if (visibilityCheckRef.current) clearTimeout(visibilityCheckRef.current);
+      visibilityCheckRef.current = setTimeout(markVisibleUnread, 120);
+    };
+    root.addEventListener('scroll', handler, { passive: true });
+    window.addEventListener('resize', handler);
+    document.addEventListener('visibilitychange', handler);
+    return () => {
+      root.removeEventListener('scroll', handler);
+      window.removeEventListener('resize', handler);
+      document.removeEventListener('visibilitychange', handler);
+    };
+  }, [markVisibleUnread]);
 
   return (
     <motion.div 

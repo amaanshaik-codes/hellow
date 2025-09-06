@@ -62,6 +62,10 @@ export default async function handler(req, res) {
         return await handlePresenceSync(res, safeRoom);
       case 'receipt':
         return await handleReceipt(res, safeRoom, username, req.body.messageId, req.body.messageTimestamp);
+      case 'receipt_batch':
+        return await handleReceiptBatch(res, safeRoom, username, req.body.messageIds);
+      case 'reads_sync':
+        return await handleReadsSync(res, safeRoom, username, req.body.peer);
       default:
         return res.status(400).json({ error: 'Unknown action' });
     }
@@ -266,6 +270,7 @@ async function handlePresenceSync(res, room) {
 async function handleReceipt(res, room, username, messageId, messageTimestamp) {
   if (!messageId) return res.status(400).json({ error: 'messageId required' });
   try {
+    await persistReads(room, username, [messageId]);
     const payload = {
       type: 'receipt',
       messageId,
@@ -277,5 +282,55 @@ async function handleReceipt(res, room, username, messageId, messageTimestamp) {
     return res.status(200).json({ success: true });
   } catch (e) {
     return res.status(500).json({ error: 'Failed to send receipt' });
+  }
+}
+
+async function handleReceiptBatch(res, room, username, messageIds = []) {
+  if (!Array.isArray(messageIds) || !messageIds.length) return res.status(400).json({ error: 'messageIds required' });
+  try {
+    await persistReads(room, username, messageIds);
+    const baseTs = Date.now();
+    messageIds.forEach((id, idx) => {
+      broadcastToRoom(room, {
+        type: 'receipt',
+        messageId: id,
+        reader: username,
+        timestamp: baseTs + idx
+      }, 'receipt');
+    });
+    return res.status(200).json({ success: true, count: messageIds.length });
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed batch receipt' });
+  }
+}
+
+async function handleReadsSync(res, room, username, peer) {
+  try {
+    const key = getReadsKey(room, peer || username, peer ? peer : username);
+    const reads = await kv.get(key) || [];
+    return res.status(200).json({ success: true, reads });
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed reads sync' });
+  }
+}
+
+function getReadsKey(room, reader) {
+  return `room_reads_${room}_${reader}`;
+}
+
+async function persistReads(room, reader, messageIds) {
+  try {
+    const key = getReadsKey(room, reader);
+    const existing = await kv.get(key) || [];
+    const set = new Set(existing);
+    let changed = false;
+    for (const id of messageIds) {
+      if (!set.has(id)) { set.add(id); changed = true; }
+    }
+    if (changed) {
+      await kv.set(key, Array.from(set).slice(-500));
+    }
+  } catch (e) {
+    console.warn('persistReads failed', e);
   }
 }
