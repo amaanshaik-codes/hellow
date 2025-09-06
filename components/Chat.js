@@ -87,26 +87,65 @@ export default function Chat({ user, onLogout }) {
     try {
       const root = viewportRef.current;
       if (!root || !sendReadReceipt) return;
+      const GN = typeof window !== 'undefined' ? window.__DEBUG_READS : false;
       const rect = root.getBoundingClientRect();
-      const MIN_VIS = 0.55; // 55% visible
+      const MIN_VIS = 0.45; // relax threshold for desktop
       const candidates = Array.from(root.querySelectorAll('[data-owner="peer"][data-mid]'));
+
+      const containerHeight = root.clientHeight;
+      const scrollTop = root.scrollTop;
+
       candidates.forEach(el => {
         const mid = el.getAttribute('data-mid');
         if (!mid || readSentRef.current.has(mid)) return;
+        const m = messages.find(mm => mm.id === mid);
+        if (!m) return;
+        // Method 1: bounding rect intersection (works across layouts)
         const r = el.getBoundingClientRect();
-        const height = r.height || 1;
-        const visible = Math.min(rect.bottom, r.bottom) - Math.max(rect.top, r.top);
-        const ratio = visible / height;
+        const h1 = r.height || 1;
+        const vis1 = Math.min(rect.bottom, r.bottom) - Math.max(rect.top, r.top);
+        const ratio1 = vis1 / h1;
+        // Method 2: offset math relative to scroll container (more reliable for desktop scrollbars)
+        // We accumulate offsetTop relative to root
+        let off = 0; let node = el; while (node && node !== root) { off += node.offsetTop; node = node.offsetParent; }
+        const elTopRel = off - scrollTop;
+        const elBottomRel = elTopRel + el.offsetHeight;
+        const clippedTop = Math.max(0, elTopRel);
+        const clippedBottom = Math.min(containerHeight, elBottomRel);
+        const vis2 = clippedBottom - clippedTop;
+        const ratio2 = vis2 / (el.offsetHeight || 1);
+        const ratio = Math.max(ratio1, ratio2);
+        if (GN) console.log('[READ-CHECK]', { mid, ratio1: ratio1.toFixed(2), ratio2: ratio2.toFixed(2), used: ratio.toFixed(2) });
         if (ratio >= MIN_VIS) {
-          const m = messages.find(mm => mm.id === mid);
-            if (m) {
-              readSentRef.current.add(mid);
-              sendReadReceipt(m);
-            }
+          readSentRef.current.add(mid);
+          sendReadReceipt(m);
         }
       });
-    } catch (e) {}
+
+      // Fallback: if user is near bottom, mark last 10 peer messages as read
+      const nearBottom = (root.scrollHeight - (root.scrollTop + root.clientHeight)) < 40;
+      if (nearBottom) {
+        const tailPeers = candidates.slice(-10);
+        tailPeers.forEach(el => {
+          const mid = el.getAttribute('data-mid');
+          if (!mid || readSentRef.current.has(mid)) return;
+          const m = messages.find(mm => mm.id === mid);
+          if (m) {
+            readSentRef.current.add(mid);
+            sendReadReceipt(m);
+            if (GN) console.log('[READ-FALLBACK]', mid);
+          }
+        });
+      }
+    } catch (e) {
+      // noop
+    }
   }, [messages, sendReadReceipt]);
+
+  // Extra triggers specifically helpful for desktop focus/resize
+  useEffect(() => {
+    markVisibleUnread();
+  }, [markVisibleUnread]);
 
   // Auto-scroll to bottom when new messages arrive, but only if user is near the bottom
   useEffect(() => {
