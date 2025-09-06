@@ -860,6 +860,17 @@ export default function Chat({ user, onLogout }) {
             Connected: {isConnected ? 'Yes' : 'No'}
           </div>
         )}
+        {/* Outgoing message status line */}
+        {messages.length > 0 && (() => {
+          const mine = [...messages].filter(m => m.username === user.username);
+          if (!mine.length) return null;
+          const last = mine[mine.length - 1];
+          return (
+            <div className="text-[11px] px-4 py-1 text-system-secondaryLabel text-right" aria-live="polite">
+              {last.readAt ? 'Read' : last.state === 'confirmed' ? 'Delivered' : last.state === 'failed' ? 'Failed to send' : 'Sending…'}
+            </div>
+          );
+        })()}
       </motion.div>
     </motion.div>
   );

@@ -36,8 +36,11 @@ export function usePragmaticChat(username, jwtToken) {
         const withoutPending = prev.filter(m => m.id !== message.id);
         
         // Add confirmed message
-        return [...withoutPending, message]
-          .sort((a, b) => a.timestamp - b.timestamp);
+        const enriched = {
+          ...message,
+          state: message.username === username ? 'confirmed' : undefined
+        };
+        return [...withoutPending, enriched].sort((a, b) => a.timestamp - b.timestamp);
       });
     });
 
@@ -130,8 +133,8 @@ export function usePragmaticChat(username, jwtToken) {
       const sentMessage = await messagingRef.current.sendMessage(text.trim(), replyTo, uniqueId);
       
       // Replace temp message with confirmed one
-      setMessages(prev => prev.map(msg => 
-        msg.id === tempMessage.id ? sentMessage : msg
+      setMessages(prev => prev.map(msg =>
+        msg.id === tempMessage.id ? { ...sentMessage, state: 'confirmed' } : msg
       ));
       
       return sentMessage;
