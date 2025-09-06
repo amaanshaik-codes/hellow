@@ -12,42 +12,51 @@
 /* Apply theme to both html and body for better coverage */
 html.theme-light,
 body.theme-light { 
-  --system-background: #f5f7fa; 
-  --system-secondaryBackground: rgba(255,255,255,0.55); 
-  --system-tertiaryBackground: rgba(255,255,255,0.40); 
-  --system-groupedBackground: rgba(255,255,255,0.55); 
-  --system-label: #0b0f18; 
+  --system-background: #ffffff; 
+  --system-secondaryBackground: #f8f9fa; 
+  --system-tertiaryBackground: #ffffff; 
+  --system-groupedBackground: #f8f9fa; 
+  --system-label: #000000; 
   --system-secondaryLabel: #3C3C43; 
-  --system-tertiaryLabel: #5a5a62; 
+  --system-tertiaryLabel: #8E8E93; 
   --system-accent: var(--system-blue); 
   --white-10: rgba(0,0,0,0.08); 
   --white-06: rgba(0,0,0,0.06); 
   --white-03: rgba(0,0,0,0.03);
-  --button-bg: rgba(255,255,255,0.8);
-  --button-hover-bg: rgba(255,255,255,0.9);
-  --button-text: #0b0f18;
-  --input-bg: rgba(255,255,255,0.7);
-  --border-color: rgba(0,0,0,0.1);
+  --white-05: rgba(0,0,0,0.05);
+  --white-08: rgba(0,0,0,0.08);
+  --button-bg: rgba(255,255,255,0.9);
+  --button-hover-bg: rgba(255,255,255,1.0);
+  --button-text: #000000;
+  --input-bg: rgba(255,255,255,0.8);
+  --border-color: rgba(0,0,0,0.12);
+  --status-online: #34c759;
+  --status-offline: #8e8e93;
 }
 
 html.theme-dark,
 body.theme-dark { 
-  --system-background: #05070b; 
-  --system-secondaryBackground: rgba(12,18,28,0.55); 
-  --system-tertiaryBackground: rgba(20,28,40,0.40); 
-  --system-groupedBackground: rgba(12,18,28,0.55); 
+  --system-background: #000000; 
+  --system-secondaryBackground: #1c1c1e; 
+  --system-tertiaryBackground: #2c2c2e; 
+  --system-groupedBackground: #1c1c1e; 
   --system-label: #ffffff; 
-  --system-secondaryLabel: #d0d5e2; 
-  --system-tertiaryLabel: #a0a8b8; 
+  --system-secondaryLabel: #ebebf5; 
+  --system-tertiaryLabel: #ebebf5; 
   --system-accent: var(--system-blue); 
-  --white-10: rgba(255,255,255,0.16); 
-  --white-06: rgba(255,255,255,0.10); 
-  --white-03: rgba(255,255,255,0.06);
+  --white-10: rgba(255,255,255,0.1); 
+  --white-06: rgba(255,255,255,0.06); 
+  --white-03: rgba(255,255,255,0.03);
+  --white-05: rgba(255,255,255,0.05);
+  --white-08: rgba(255,255,255,0.08);
+  --white-20: rgba(255,255,255,0.2);
   --button-bg: rgba(255,255,255,0.1);
   --button-hover-bg: rgba(255,255,255,0.15);
   --button-text: #ffffff;
   --input-bg: rgba(255,255,255,0.08);
   --border-color: rgba(255,255,255,0.1);
+  --status-online: #30d158;
+  --status-offline: #8e8e93;
 }
 
 /* Theme toggle button styling */
@@ -75,10 +84,10 @@ body.theme-dark {
 @media (prefers-color-scheme: light){:root { --system-background:#FFFFFF; --system-secondaryBackground:#F2F2F7; --system-tertiaryBackground:#FFFFFF; --system-groupedBackground:#F2F2F7; --system-label:#000000; --system-secondaryLabel:#3C3C43; --system-tertiaryLabel:#3C3C43; --system-accent: var(--system-blue);} }
 @media (prefers-color-scheme: dark){:root { --system-background:#000000; --system-secondaryBackground:#1C1C1E; --system-tertiaryBackground:#2C2C2E; --system-groupedBackground:#000000; --system-label:#FFFFFF; --system-secondaryLabel:#EBEBF5; --system-tertiaryLabel:#EBEBF5; --system-accent: var(--system-blue);} }
 .bg-system-background{background-color:var(--system-background);} .bg-system-secondaryBackground{background-color:var(--system-secondaryBackground);} .bg-system-tertiaryBackground{background-color:var(--system-tertiaryBackground);} .bg-system-groupedBackground{background-color:var(--system-groupedBackground);} .bg-system-accent{background-color:var(--system-accent);} .text-system-label{color:var(--system-label);} .text-system-secondaryLabel{color:var(--system-secondaryLabel);} .text-system-tertiaryLabel{color:var(--system-tertiaryLabel);} .bg-white-10{background-color:var(--white-10);} .bg-white-20{background-color:var(--white-20);} .bg-white-06{background-color:var(--white-06);} .bg-white-03{background-color:var(--white-03);} .border-white-10{border-color:var(--white-10);} .border-white-06{border-color:var(--white-06);} .rounded-apple{border-radius:20px;} .shadow-apple{box-shadow:0 8px 32px rgba(0,0,0,0.12),0 2px 8px rgba(0,0,0,0.08);} .backdrop-blur-apple{backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);} 
-.login-card{background:linear-gradient(180deg,var(--system-secondaryBackground),var(--system-tertiaryBackground)); border:1px solid var(--white-10); box-shadow:0 12px 48px rgba(0,0,0,0.15),0 4px 18px rgba(0,0,0,0.08);} .login-card button{color:var(--system-label);} .login-card button:hover{background:var(--white-10);} 
+.login-card{background:var(--system-background); border:1px solid var(--white-06); box-shadow:0 12px 48px rgba(0,0,0,0.15),0 4px 18px rgba(0,0,0,0.08);} .login-card button{color:var(--system-label);} .login-card button:hover{background:var(--white-06);} 
 .chat-wrapper-centered{display:flex;justify-content:center;align-items:center;padding:20px;height:var(--app-height,100vh);} 
-.chat-card{width:100%;max-width:800px;height:calc(var(--app-height,100vh) - 40px);background:linear-gradient(160deg,var(--system-secondaryBackground),var(--system-tertiaryBackground));border:1px solid var(--white-10);border-radius:28px;box-shadow:0 24px 80px -16px rgba(0,0,0,0.45),0 8px 28px rgba(0,0,0,0.28);overflow:hidden;display:flex;flex-direction:column;backdrop-filter:blur(28px) saturate(140%);-webkit-backdrop-filter:blur(28px) saturate(140%);} 
-.chat-header-card{padding:14px 24px;background:linear-gradient(140deg,var(--system-secondaryBackground),var(--system-tertiaryBackground));border-bottom:1px solid var(--white-10);display:flex;justify-content:space-between;align-items:center;backdrop-filter:blur(26px) saturate(160%);-webkit-backdrop-filter:blur(26px) saturate(160%);} 
+.chat-card{width:100%;max-width:800px;height:calc(var(--app-height,100vh) - 40px);background:var(--system-background);border:1px solid var(--white-06);border-radius:28px;box-shadow:0 24px 80px -16px rgba(0,0,0,0.45),0 8px 28px rgba(0,0,0,0.28);overflow:hidden;display:flex;flex-direction:column;backdrop-filter:blur(28px) saturate(140%);-webkit-backdrop-filter:blur(28px) saturate(140%);} 
+.chat-header-card{padding:14px 24px;background:var(--system-background);border-bottom:1px solid var(--white-06);display:flex;justify-content:space-between;align-items:center;backdrop-filter:blur(26px) saturate(160%);-webkit-backdrop-filter:blur(26px) saturate(160%);} 
 /* ==== MESSAGES CONTAINER ==== */
 
 .messages-column {
@@ -655,20 +664,34 @@ body.theme-dark .bubble.peer {
   }
 }
 
-/* Dark mode mobile optimizations */
-@media (max-width: 800px) and (prefers-color-scheme: dark) {
-  .chat-card {
-    background: #000000;
+/* Dark mode and light mode mobile optimizations */
+@media (max-width: 800px) {
+  body.theme-dark .chat-card {
+    background: var(--system-background);
   }
   
-  .chat-header-card {
-    background: #000000;
-    border-bottom-color: rgba(255, 255, 255, 0.1);
+  body.theme-dark .chat-header-card {
+    background: var(--system-background);
+    border-bottom-color: var(--white-06);
   }
   
-  .input-bar-wrapper {
-    background: #000000;
-    border-top-color: rgba(255, 255, 255, 0.1);
+  body.theme-dark .input-bar-wrapper {
+    background: var(--system-background);
+    border-top-color: var(--white-06);
+  }
+
+  body.theme-light .chat-card {
+    background: var(--system-background);
+  }
+  
+  body.theme-light .chat-header-card {
+    background: var(--system-background);
+    border-bottom-color: var(--white-06);
+  }
+  
+  body.theme-light .input-bar-wrapper {
+    background: var(--system-background);
+    border-top-color: var(--white-06);
   }
 }
 
@@ -788,7 +811,8 @@ body.theme-dark .bubble.peer {
 
 .input-bar-wrapper {
   padding: 14px 26px 24px;
-  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.12));
+  background: var(--system-background);
+  border-top: 1px solid var(--white-06);
 }
 
 .chat-input-bar {
@@ -866,8 +890,8 @@ body.theme-dark .bubble.peer {
 
 .info-card {
   width: 320px;
-  background: linear-gradient(180deg, var(--system-secondaryBackground), var(--system-tertiaryBackground));
-  border: 1px solid var(--white-10);
+  background: var(--system-background);
+  border: 1px solid var(--white-06);
   border-radius: 24px;
   padding: 20px 24px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
@@ -1479,7 +1503,7 @@ button[type="button"]:hover {
 }
 
 .context-menu {
-  background: var(--white-10);
+  background: var(--system-background);
   backdrop-filter: blur(20px);
   border: 1px solid var(--white-06);
   border-radius: 12px;
