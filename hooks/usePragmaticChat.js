@@ -74,9 +74,10 @@ export function usePragmaticChat(username, jwtToken) {
 
     // Receipts
     const unsubscribeReceipts = messaging.onReceipt((data) => {
-      setReceipts(prev => ({ ...prev, [data.messageId]: { ...prev[data.messageId], read: data.read || Date.now() } }));
-      // Patch message inline for convenience
-      setMessages(prev => prev.map(m => m.id === data.messageId ? { ...m, readAt: Date.now() } : m));
+  const ts = data.read || Date.now();
+  setReceipts(prev => ({ ...prev, [data.messageId]: { ...prev[data.messageId], read: ts } }));
+  // Only add readAt if the message belongs to current user (outgoing)
+  setMessages(prev => prev.map(m => m.id === data.messageId && m.username === username ? { ...m, readAt: ts } : m));
     });
 
     // Stats monitoring
