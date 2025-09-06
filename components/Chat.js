@@ -33,7 +33,6 @@ export default function Chat({ user, onLogout }) {
 
   // UI state
   const [input, setInput] = useState('');
-  const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const [editing, setEditing] = useState({ id: null, text: '' });
   const [replyTo, setReplyTo] = useState(null);
   const [context, setContext] = useState(null);
@@ -45,54 +44,37 @@ export default function Chat({ user, onLogout }) {
   const chatBottom = useRef(null);
   const typingTimeoutRef = useRef(null);
   const resizeTimeoutRef = useRef(null);
-    // Auto-scroll to bottom when new messages arrive, but only if user is near the bottom
-    useEffect(() => {
-      try {
-        const viewport = viewportRef.current;
-        if (!viewport) {
-          // Fallback to chatBottom behavior
-          chatBottom.current && chatBottom.current.scrollIntoView({ behavior: 'smooth' });
-          return;
-        }
 
-        // Determine if user is near the bottom (within 150px)
-        const scrollTop = viewport.scrollTop;
-        const clientHeight = viewport.clientHeight;
-        const scrollHeight = viewport.scrollHeight;
-        const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
-
-        const isNearBottom = distanceFromBottom < 150;
-
-        // If near bottom OR the latest message was sent by local user, scroll
-        const lastMsg = messages[messages.length - 1];
-        const lastIsLocal = lastMsg && lastMsg.username === user.username;
-
-        if (isNearBottom || lastIsLocal) {
-          // Scroll smoothly
-          chatBottom.current && chatBottom.current.scrollIntoView({ behavior: 'smooth' });
-        }
-      } catch (e) {
-        console.warn('Auto-scroll failed:', e);
+  // Auto-scroll to bottom when new messages arrive, but only if user is near the bottom
+  useEffect(() => {
+    try {
+      const viewport = viewportRef.current;
+      if (!viewport) {
+        // Fallback to chatBottom behavior
+        chatBottom.current && chatBottom.current.scrollIntoView({ behavior: 'smooth' });
+        return;
       }
-    }, [messages]);
 
-    // Collapse header on scroll to give more vertical space on mobile
-    useEffect(() => {
-      const vp = viewportRef.current;
-      if (!vp) return;
+      // Determine if user is near the bottom (within 150px)
+      const scrollTop = viewport.scrollTop;
+      const clientHeight = viewport.clientHeight;
+      const scrollHeight = viewport.scrollHeight;
+      const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
 
-      let lastTop = 0;
-      const onScroll = () => {
-        const top = vp.scrollTop || 0;
-        // Collapse when scrolled down beyond 40px
-        if (top > 40) setHeaderCollapsed(true);
-        else setHeaderCollapsed(false);
-        lastTop = top;
-      };
+      const isNearBottom = distanceFromBottom < 150;
 
-      vp.addEventListener('scroll', onScroll);
-      return () => vp.removeEventListener('scroll', onScroll);
-    }, []);
+      // If near bottom OR the latest message was sent by local user, scroll
+      const lastMsg = messages[messages.length - 1];
+      const lastIsLocal = lastMsg && lastMsg.username === user.username;
+
+      if (isNearBottom || lastIsLocal) {
+        // Scroll smoothly
+        chatBottom.current && chatBottom.current.scrollIntoView({ behavior: 'smooth' });
+      }
+    } catch (e) {
+      console.warn('Auto-scroll failed:', e);
+    }
+  }, [messages]);
 
   // Prevent mobile address-bar/layout jumps by setting a CSS variable to the innerHeight
   useEffect(() => {
@@ -155,19 +137,59 @@ export default function Chat({ user, onLogout }) {
       setTimeout(() => {
         // Scroll the message viewport to bottom
         const vp = viewportRef.current;
-        if (vp) vp.scrollTop = vp.scrollHeight;
+        if (vp) {
+          vp.scrollTop = vp.scrollHeight;
+        }
 
-        // Also nudge the window scroll so the header/peer info can be revealed if browser UI is present
-        try { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); } catch (e) {}
-      }, 120);
-      // when focusing input, collapse header to maximize space
-      setHeaderCollapsed(true);
-    } catch (e) {}
+        // On mobile, ensure the input stays visible above the keyboard
+        if (window.innerWidth <= 800) {
+          // Scroll the entire page to keep input visible
+          const inputElement = textareaRef.current;
+          if (inputElement) {
+            inputElement.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'end',
+              inline: 'nearest'
+            });
+          }
+        }
+      }, 150); // Increased delay for better keyboard handling
+      
+      // Don't collapse header on input focus anymore - keep peer info visible
+    } catch (e) {
+      console.warn('Input focus handler failed:', e);
+    }
   }, []);
 
-  // restore header after input blur
+  // restore header after input blur - no longer needed since we don't collapse
   const handleInputBlur = useCallback(() => {
-    setTimeout(() => setHeaderCollapsed(false), 300);
+    // No header manipulation needed
+  }, []);
+
+  // Auto-resize textarea based on content
+  const autoResizeTextarea = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      // Reset height to auto to get the correct scrollHeight
+      textarea.style.height = 'auto';
+      // Set height based on content, with min and max constraints
+      const newHeight = Math.max(44, Math.min(100, textarea.scrollHeight));
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, []);
+
+  // Haptic feedback for mobile interactions
+  const triggerHapticFeedback = useCallback((type = 'light') => {
+    if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) {
+      // Different vibration patterns for different feedback types
+      const patterns = {
+        light: [10],
+        medium: [20],
+        heavy: [30],
+        success: [10, 50, 10]
+      };
+      window.navigator.vibrate(patterns[type] || patterns.light);
+    }
   }, []);
 
   // Send message handler
@@ -186,13 +208,21 @@ export default function Chat({ user, onLogout }) {
       sendTyping(false);
     }
 
+    // Trigger haptic feedback on send
+    triggerHapticFeedback('light');
+
     try {
       await sendPragmaticMessage(messageText, replyTo, messageId);
+      // Success haptic feedback
+      triggerHapticFeedback('success');
+      // Auto-resize textarea after clearing
+      autoResizeTextarea();
     } catch (error) {
       console.error('Failed to send message:', error);
-      // Could show error toast here
+      // Error haptic feedback
+      triggerHapticFeedback('heavy');
     }
-  }, [input, replyTo, sendPragmaticMessage]);
+  }, [input, replyTo, sendPragmaticMessage, triggerHapticFeedback, sendTyping, autoResizeTextarea]);
 
   // Keyboard handling
   const handleInputKeyDown = useCallback((e) => {
@@ -396,14 +426,14 @@ export default function Chat({ user, onLogout }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3, duration: 0.4 }}
         >
-          <div className="flex items-center gap-4">
-            <div>
-              <div className="font-bold text-lg text-system-label">
+          <div className="flex items-center gap-3">
+            <div className="flex-1 min-w-0"> {/* Allow text to truncate */}
+              <div className="font-bold text-lg text-system-label truncate">
                 {displayPeerName}
               </div>
               <div className="text-system-secondaryLabel text-sm flex items-center gap-2">
                 <div
-                  className="status-dot"
+                  className="status-dot flex-shrink-0"
                   aria-hidden
                   style={{
                     width: 8,
@@ -412,28 +442,29 @@ export default function Chat({ user, onLogout }) {
                     backgroundColor: peerPresence && peerPresence.isOnline ? 'var(--status-online, #16a34a)' : 'var(--status-offline, #d97706)'
                   }}
                 />
-                <div>
+                <div className="truncate">
                   {peerPresence && peerPresence.isOnline ? (
-                    <span className="ml-2">Online</span>
+                    <span>Online</span>
                   ) : (peerPresence && peerPresence.lastSeen) ? (
-                    <span className="ml-2">Last seen {formatRelative(peerPresence.lastSeen)}</span>
+                    <span>Last seen {formatRelative(peerPresence.lastSeen)}</span>
                   ) : (
-                    <span className="ml-2">Offline</span>
+                    <span>Offline</span>
                   )}
                 </div>
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
             <ThemeToggle />
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <button 
                   onClick={onLogout} 
-                  className="bg-transparent border-none cursor-pointer" 
+                  className="bg-transparent border-none cursor-pointer flex items-center justify-center"
+                  style={{ padding: '4px', minWidth: '32px', minHeight: '32px' }}
                   aria-label="Logout"
                 >
-                  <ExitIcon className="text-system-accent w-6 h-6" />
+                  <ExitIcon className="text-system-accent w-5 h-5" />
                 </button>
               </Tooltip.Trigger>
               <Tooltip.Content 
@@ -721,9 +752,22 @@ export default function Chat({ user, onLogout }) {
               onChange={(e) => {
                 setInput(e.target.value);
                 sendTypingIndicator(); // Send typing indicator on input change
+                autoResizeTextarea(); // Auto-resize textarea
               }}
               onKeyDown={handleInputKeyDown}
               placeholder="Type your message..."
+              rows={1}
+              style={{ 
+                maxHeight: '120px',
+                minHeight: '44px',
+                resize: 'none',
+                lineHeight: '1.4'
+              }}
+              autoComplete="off"
+              autoCorrect="on"
+              autoCapitalize="sentences"
+              spellCheck="true"
+              enterKeyHint="send"
             />
             <motion.button
               type="submit"

@@ -289,62 +289,478 @@ body.theme-dark .bubble.peer {
 
 /* Mobile-specific layout adjustments to avoid browser chrome/keyboard issues */
 @media (max-width: 800px) {
+  /* Enable hardware acceleration for smoother performance */
+  .chat-card, .chat-header-card, .input-bar-wrapper, .bubble {
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    will-change: transform;
+  }
+
   .chat-wrapper-centered {
-    padding: 12px 8px;
+    padding: 8px 4px;
     height: var(--app-height, 100vh);
     align-items: stretch;
+    overflow: hidden; /* Prevent any wrapper scrolling */
   }
 
   .chat-card {
     max-width: 100%;
-    height: calc(var(--app-height, 100vh) - 12px);
-    border-radius: 14px;
+    height: calc(var(--app-height, 100vh) - 8px);
+    border-radius: 12px;
     margin: 0;
+    border: none; /* Remove borders on mobile */
+    box-shadow: none; /* Simplify shadows for cleaner mobile look */
+    background: var(--system-background); /* Use solid background instead of gradient */
   }
 
+  /* Compact but always visible header */
   .chat-header-card {
-    padding: 10px 14px;
-    gap: 8px;
+    padding: 8px 12px;
+    gap: 6px;
     align-items: center;
+    min-height: 50px; /* Fixed height for consistency */
+    flex-shrink: 0; /* Prevent header from shrinking */
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--white-06);
+    background: var(--system-background);
   }
 
   .chat-header-card .font-bold {
-    font-size: 16px;
+    font-size: 15px;
+    line-height: 1.2;
   }
 
-  /* Make the messages area occupy remaining space and allow natural page scroll so browser chrome can collapse */
-  .messages-column { padding: 14px 16px; }
+  .chat-header-card .text-sm {
+    font-size: 12px;
+    line-height: 1.2;
+  }
 
-  /* Reduce input padding and increase touch targets */
-  .input-bar-wrapper { padding: 10px 12px 14px; }
-  .chat-input-bar { padding: 10px 12px; min-height: 52px; }
-  .chat-text-input { min-height: 44px; font-size: 15px; }
+  /* Optimize messages area for mobile */
+  .messages-column { 
+    padding: 8px 12px; 
+    flex: 1; 
+    min-height: 0; 
+    overflow: hidden; /* Prevent column from creating scroll */
+  }
 
-  /* Ensure the chat-card doesn't overflow the viewport and allows inner scroll to function correctly */
-  .chat-card { min-height: 0; }
+  /* Ensure Radix ScrollArea takes full available space */
+  .messages-scroll-root {
+    flex: 1 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+  }
 
-  /* Sticky header so peer info remains visible when messages scroll */
-  .chat-header-card { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px); }
-  
+  /* Mobile viewport optimization - remove all borders and ensure smooth scrolling */
+  [data-radix-scroll-area-viewport] { 
+    height: 100% !important;
+    min-height: 0 !important;
+    border: none !important;
+    outline: none !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    /* Better scroll performance on mobile */
+    scroll-behavior: smooth;
+    overscroll-behavior: contain;
+  }
+
+  [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  /* Enhanced input area for mobile */
+  .input-bar-wrapper { 
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+    flex-shrink: 0; /* Prevent input area from shrinking */
+    background: var(--system-background);
+    border-top: 1px solid var(--white-06);
+  }
+
+  .chat-input-bar { 
+    padding: 8px 12px; 
+    min-height: 48px;
+    border: 1px solid var(--white-10);
+    background: var(--system-secondaryBackground);
+    border-radius: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .chat-text-input { 
+    min-height: 40px; 
+    font-size: 16px; /* Prevent iOS zoom on focus */
+    line-height: 1.3;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    resize: none !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    /* Better mobile input handling */
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-tap-highlight-color: transparent;
+    /* Auto-resize behavior */
+    overflow-y: auto;
+    max-height: 100px;
+  }
+
+  /* Auto-resize textarea on mobile */
+  .chat-text-input:focus {
+    /* Subtle focus indication without changing layout */
+    box-shadow: none !important;
+    border: none !important;
+  }
+
   /* Hide connection stats on mobile to save screen space */
-  .connection-stats-footer { display: none; }
+  .connection-stats-footer { 
+    display: none !important; 
+  }
 
-  /* Prevent body/page scrollbars inside the chat experience */
-  html, body { overflow: hidden; height: 100%; }
-  body { -webkit-overflow-scrolling: touch; }
-  
-  /* Make the radix viewport the only scrollable area */
-  [data-radix-scroll-area-viewport] { height: calc(var(--app-height, 100vh) - 140px) !important; }
+  /* Prevent body/page scrollbars and ensure proper mobile layout */
+  html, body { 
+    overflow: hidden !important; 
+    height: 100% !important;
+    -webkit-overflow-scrolling: touch;
+    position: fixed !important; /* Prevent address bar scroll issues */
+    width: 100% !important;
+    /* Better mobile handling */
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+    touch-action: manipulation;
+  }
+
+  /* Remove all unwanted scrollbars and borders on mobile */
+  * {
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  /* Bubble adjustments for mobile */
+  .bubble {
+    max-width: min(88vw, 550px);
+    font-size: 15px;
+    padding: 8px 12px;
+    margin: 2px 0;
+    border: none !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+    /* Better text rendering on mobile */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Message row spacing for mobile */
+  .msg-row {
+    margin: 1px 0;
+  }
+
+  /* Status dot sizing for mobile */
+  .status-dot {
+    width: 6px !important;
+    height: 6px !important;
+  }
+
+  /* Compact theme toggle and logout buttons */
+  .theme-toggle-btn {
+    padding: 6px 8px;
+    font-size: 14px;
+    border-radius: 8px;
+    /* Better touch target */
+    min-width: 36px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Ensure send button is touch-friendly */
+  .send-btn-modern {
+    padding: 8px 16px;
+    font-size: 14px;
+    border-radius: 16px;
+    min-width: 60px;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Prevent text selection on button */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Typing indicator mobile optimization */
+  .typing-indicator {
+    padding: 8px 12px;
+    margin: 4px 0;
+    font-size: 13px;
+  }
+
+  /* Context menu mobile optimization */
+  .context-menu {
+    min-width: 140px;
+    border-radius: 12px;
+    padding: 8px;
+  }
+
+  .context-menu button {
+    padding: 12px 16px;
+    font-size: 14px;
+    min-height: 44px; /* Touch-friendly target */
+    border-radius: 8px;
+  }
+
+  /* Reply preview mobile optimization */
+  .reply-preview {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  /* Info modal mobile optimization */
+  .info-card {
+    width: calc(100vw - 32px);
+    max-width: 320px;
+    margin: 16px;
+  }
 }
 
 /* Use app-height when available for desktop too as a fallback */
 :root { --app-height: 100vh; }
+
+/* Enhanced mobile experience for Android Chrome and small screens */
+@media (max-width: 480px) {
+  /* Further optimize for small screens */
+  .chat-wrapper-centered {
+    padding: 4px 2px;
+  }
+
+  .chat-card {
+    height: calc(var(--app-height, 100vh) - 4px);
+    border-radius: 8px;
+    border: none;
+    box-shadow: none;
+  }
+
+  .chat-header-card {
+    padding: 6px 10px;
+    min-height: 44px;
+  }
+
+  .chat-header-card .font-bold {
+    font-size: 14px;
+  }
+
+  .chat-header-card .text-sm {
+    font-size: 11px;
+  }
+
+  .messages-column {
+    padding: 6px 10px;
+  }
+
+  .input-bar-wrapper {
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .chat-input-bar {
+    padding: 6px 10px;
+    min-height: 44px;
+  }
+
+  .chat-text-input {
+    font-size: 16px; /* Prevent zoom on iOS */
+    min-height: 36px;
+  }
+
+  .send-btn-modern {
+    padding: 6px 12px;
+    font-size: 13px;
+    min-width: 54px;
+  }
+
+  .bubble {
+    max-width: min(90vw, 480px);
+    font-size: 14px;
+    padding: 6px 10px;
+  }
+
+  .theme-toggle-btn {
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+
+  /* Ensure proper touch targets on small screens */
+  button, .chat-text-input {
+    min-height: 44px;
+  }
+
+  /* Optimize typing indicator for small screens */
+  .typing-indicator {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .typing-dot {
+    width: 6px;
+    height: 6px;
+  }
+}
+
+/* Landscape mobile optimization */
+@media (max-width: 800px) and (orientation: landscape) {
+  .chat-header-card {
+    min-height: 40px;
+    padding: 4px 12px;
+  }
+
+  .chat-header-card .font-bold {
+    font-size: 14px;
+  }
+
+  .chat-header-card .text-sm {
+    font-size: 11px;
+  }
+
+  .messages-column {
+    padding: 4px 12px;
+  }
+
+  .input-bar-wrapper {
+    padding: 4px 12px calc(4px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .chat-input-bar {
+    min-height: 40px;
+    padding: 6px 12px;
+  }
+
+  .chat-text-input {
+    min-height: 32px;
+  }
+}
+
+/* High DPI screen optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .bubble {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .chat-header-card {
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Dark mode mobile optimizations */
+@media (max-width: 800px) and (prefers-color-scheme: dark) {
+  .chat-card {
+    background: #000000;
+  }
+  
+  .chat-header-card {
+    background: #000000;
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+  
+  .input-bar-wrapper {
+    background: #000000;
+    border-top-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .bubble, .msg-row, .chat-card {
+    animation: none !important;
+    transition: none !important;
+  }
+  
+  .typing-dot {
+    animation: none !important;
+  }
+  
+  [data-radix-scroll-area-viewport] {
+    scroll-behavior: auto !important;
+  }
+}
 
 @media (max-width: 400px) {
   .bubble {
     max-width: min(90vw, 550px); /* Ultra-wide for small phones */
     font-size: 15px;
     padding: 6px 10px;
+  }
+}
+
+/* Performance optimizations for all mobile devices */
+@media (max-width: 800px) {
+  /* GPU acceleration for better performance */
+  .chat-card,
+  .chat-header-card,
+  .bubble,
+  .input-bar-wrapper,
+  .send-btn-modern {
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  /* Optimize scrolling performance */
+  [data-radix-scroll-area-viewport] {
+    contain: layout style paint;
+    content-visibility: auto;
+  }
+
+  /* Reduce paint complexity */
+  .bubble {
+    contain: layout paint;
+  }
+
+  /* Optimize animation performance */
+  .typing-dot {
+    transform: translateZ(0);
+    will-change: transform;
+  }
+}
+
+/* Accessibility improvements for mobile */
+@media (max-width: 800px) {
+  /* Ensure focus is visible even with transformed elements */
+  .chat-text-input:focus,
+  .send-btn-modern:focus,
+  .theme-toggle-btn:focus,
+  button:focus {
+    outline: 2px solid var(--system-accent);
+    outline-offset: 2px;
+  }
+
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    .bubble {
+      border: 1px solid currentColor;
+    }
+    
+    .chat-header-card,
+    .input-bar-wrapper {
+      border: 1px solid currentColor;
+    }
+  }
+
+  /* Support for users who prefer reduced data */
+  @media (prefers-reduced-data: reduce) {
+    .bubble {
+      box-shadow: none;
+    }
+    
+    .chat-card {
+      box-shadow: none;
+      background: var(--system-background);
+    }
   }
 }
 
