@@ -31,6 +31,40 @@ export default function Chat({ user, onLogout }) {
     stats
   } = usePragmaticChat(user.username, user.token);
 
+  // Derived presence state (precision + fading categories)
+  const [presenceView, setPresenceView] = useState({ label: 'Offline', raw: null });
+  const [typingDescriptor, setTypingDescriptor] = useState('is typing');
+
+  useEffect(() => {
+    if (!peerPresence) return;
+    const now = Date.now();
+    if (peerPresence.isOnline) {
+      setPresenceView({ label: peerPresence.deviceType ? `Online · ${peerPresence.deviceType}` : 'Online', raw: peerPresence });
+      return;
+    }
+    const lastSeen = peerPresence.lastSeen || now;
+    const diff = now - lastSeen;
+    let label = 'Offline';
+    if (diff < 5 * 60 * 1000) label = 'Last seen just now';
+    else if (diff < 60 * 60 * 1000) label = `Last seen ${Math.round(diff/60000)}m ago`;
+    else if (diff < 24 * 60 * 60 * 1000) label = `Last seen ${Math.round(diff/3600000)}h ago`;
+    else label = 'Last seen days ago';
+    setPresenceView({ label, raw: peerPresence });
+  }, [peerPresence]);
+
+  // Listen for long typing (heuristic: if typing lasts >5s show different text)
+  useEffect(() => {
+    if (!isTyping) return;
+    const start = Date.now();
+    const interval = setInterval(() => {
+      const diff = Date.now() - start;
+      if (diff > 8000) setTypingDescriptor('is crafting a long message');
+      else if (diff > 4000) setTypingDescriptor('is typing a longer message');
+      else setTypingDescriptor('is typing');
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isTyping]);
+
   // UI state
   const [input, setInput] = useState('');
   const [editing, setEditing] = useState({ id: null, text: '' });
@@ -432,24 +466,20 @@ export default function Chat({ user, onLogout }) {
                 {displayPeerName}
               </div>
               <div className="text-system-secondaryLabel text-sm flex items-center gap-2">
-                <div
+                <motion.div
                   className="status-dot flex-shrink-0"
                   aria-hidden
+                  animate={{ opacity: peerPresence?.isOnline ? 1 : [0.4,0.2,0.4] }}
+                  transition={peerPresence?.isOnline ? { duration: .2 } : { duration: 3, repeat: Infinity }}
                   style={{
                     width: 8,
                     height: 8,
                     borderRadius: 9999,
-                    backgroundColor: peerPresence && peerPresence.isOnline ? 'var(--status-online, #16a34a)' : 'var(--status-offline, #d97706)'
+                    backgroundColor: peerPresence?.isOnline ? 'var(--status-online, #16a34a)' : 'var(--status-offline, #8e8e93)'
                   }}
                 />
                 <div className="truncate">
-                  {peerPresence && peerPresence.isOnline ? (
-                    <span>Online</span>
-                  ) : (peerPresence && peerPresence.lastSeen) ? (
-                    <span>Last seen {formatRelative(peerPresence.lastSeen)}</span>
-                  ) : (
-                    <span>Offline</span>
-                  )}
+                  {presenceView.label}
                 </div>
               </div>
             </div>
@@ -699,31 +729,29 @@ export default function Chat({ user, onLogout }) {
         {/* Typing Indicator */}
         {isTyping && (
           <motion.div 
-            className="typing-indicator px-8 py-2 text-sm text-system-secondaryLabel"
-            initial={{ opacity: 0, y: 10 }}
+            className="typing-indicator px-6 py-2 text-sm text-system-secondaryLabel"
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
+            exit={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.2 }}
           >
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1">
-                <motion.div 
-                  className="w-2 h-2 bg-system-secondaryLabel rounded-full"
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
-                />
-                <motion.div 
-                  className="w-2 h-2 bg-system-secondaryLabel rounded-full"
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
-                />
-                <motion.div 
-                  className="w-2 h-2 bg-system-secondaryLabel rounded-full"
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
-                />
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1 items-end" style={{ height: 14 }}>
+                {[0,1,2].map(i => (
+                  <motion.div key={i}
+                    className="w-2 h-2 rounded-full"
+                    style={{ background: 'var(--system-secondaryLabel)' }}
+                    animate={{
+                      y: [0,-3,0],
+                      opacity: [0.4,1,0.4]
+                    }}
+                    transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.18, ease: 'easeInOut' }}
+                  />
+                ))}
               </div>
-              <span>{displayPeerName} is typing...</span>
+              <span className="truncate">
+                {displayPeerName} {typingDescriptor || 'is typing'}...
+              </span>
             </div>
           </motion.div>
         )}
