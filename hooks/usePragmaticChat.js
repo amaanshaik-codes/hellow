@@ -9,6 +9,7 @@ export function usePragmaticChat(username, jwtToken) {
   // peerPresence holds { isOnline: boolean, lastSeen: number | null }
   const [peerPresence, setPeerPresence] = useState({ isOnline: false, lastSeen: null });
   const [stats, setStats] = useState(null);
+  const [receipts, setReceipts] = useState({}); // messageId -> { read }
   
   const messagingRef = useRef(null);
 
@@ -68,6 +69,13 @@ export function usePragmaticChat(username, jwtToken) {
       }
     });
 
+    // Receipts
+    const unsubscribeReceipts = messaging.onReceipt((data) => {
+      setReceipts(prev => ({ ...prev, [data.messageId]: { ...prev[data.messageId], read: data.read || Date.now() } }));
+      // Patch message inline for convenience
+      setMessages(prev => prev.map(m => m.id === data.messageId ? { ...m, readAt: Date.now() } : m));
+    });
+
     // Stats monitoring
     const statsInterval = setInterval(() => {
       const currentStats = messaging.getStats();
@@ -82,7 +90,8 @@ export function usePragmaticChat(username, jwtToken) {
       unsubscribeConnection();
       unsubscribeMessages();
       unsubscribeTyping();
-      unsubscribePresence();
+  unsubscribePresence();
+  unsubscribeReceipts();
       clearInterval(statsInterval);
       messaging.disconnect();
       messagingRef.current = null;
@@ -150,6 +159,11 @@ export function usePragmaticChat(username, jwtToken) {
     messagingRef.current.sendPresenceUpdate(isOnline);
   }, []);
 
+  const sendReadReceipt = useCallback((message) => {
+    if (!messagingRef.current) return;
+    messagingRef.current.sendReadReceipt(message);
+  }, []);
+
   return {
     messages,
     isConnected,
@@ -159,7 +173,9 @@ export function usePragmaticChat(username, jwtToken) {
     setPresence,
     isTyping,
   peerPresence,
-    stats
+  stats,
+  receipts,
+  sendReadReceipt
   };
   // also expose attachPromiseForMessageId for advanced reconciliation
   // (available as messagingRef.current.attachPromiseForMessageId)

@@ -60,6 +60,8 @@ export default async function handler(req, res) {
         return await handleHeartbeat(res, safeRoom, username, startTime, deviceType);
       case 'presence_sync':
         return await handlePresenceSync(res, safeRoom);
+      case 'receipt':
+        return await handleReceipt(res, safeRoom, username, req.body.messageId, req.body.messageTimestamp);
       default:
         return res.status(400).json({ error: 'Unknown action' });
     }
@@ -257,5 +259,23 @@ async function handlePresenceSync(res, room) {
     return res.status(200).json({ success: true, presence, timestamp: Date.now() });
   } catch (e) {
     return res.status(500).json({ error: 'Failed presence sync' });
+  }
+}
+
+// Read / delivery receipt handling
+async function handleReceipt(res, room, username, messageId, messageTimestamp) {
+  if (!messageId) return res.status(400).json({ error: 'messageId required' });
+  try {
+    const payload = {
+      type: 'receipt',
+      messageId,
+      reader: username,
+      timestamp: Date.now(),
+      messageTimestamp: messageTimestamp || null
+    };
+    broadcastToRoom(room, payload, 'receipt');
+    return res.status(200).json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to send receipt' });
   }
 }

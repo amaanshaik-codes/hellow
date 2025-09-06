@@ -28,7 +28,8 @@ export default function Chat({ user, onLogout }) {
     setPresence,
     isTyping,
     peerPresence,
-    stats
+  stats,
+  sendReadReceipt
   } = usePragmaticChat(user.username, user.token);
 
   // Derived presence state (precision + fading categories)
@@ -78,6 +79,8 @@ export default function Chat({ user, onLogout }) {
   const chatBottom = useRef(null);
   const typingTimeoutRef = useRef(null);
   const resizeTimeoutRef = useRef(null);
+  const readObserverRef = useRef(null);
+  const readSentRef = useRef(new Set());
 
   // Auto-scroll to bottom when new messages arrive, but only if user is near the bottom
   useEffect(() => {
@@ -433,6 +436,41 @@ export default function Chat({ user, onLogout }) {
     }
   }, [context]);
 
+  // Observe inbound (peer) messages as they come into view to trigger read receipts
+  useEffect(() => {
+    try {
+      const root = viewportRef.current;
+      if (!root || !sendReadReceipt) return;
+      if (readObserverRef.current) {
+        readObserverRef.current.disconnect();
+      }
+      readObserverRef.current = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const el = entry.target;
+            const mid = el.getAttribute('data-mid');
+            const owner = el.getAttribute('data-owner');
+            if (owner === 'peer' && mid) {
+              const msg = messages.find(m => m.id === mid);
+              if (msg && !readSentRef.current.has(mid)) {
+                // Avoid duplicate rapid sends until receipt returns
+                readSentRef.current.add(mid);
+                sendReadReceipt(msg);
+              }
+            }
+          }
+        });
+      }, { root, threshold: 0.6 });
+
+      // Only observe a subset (recent peer messages) for performance
+      const peerEls = Array.from(root.querySelectorAll('[data-owner="peer"]'));
+      peerEls.slice(-40).forEach(el => readObserverRef.current.observe(el));
+      return () => readObserverRef.current && readObserverRef.current.disconnect();
+    } catch (err) {
+      console.warn('Read receipt observer error', err);
+    }
+  }, [messages, sendReadReceipt]);
+
   return (
     <motion.div 
       className="chat-wrapper-centered bg-system-background" 
@@ -617,8 +655,13 @@ export default function Chat({ user, onLogout }) {
                                         {msg.edited && (
                                           <span className="text-system-secondaryLabel text-xs">(edited)</span>
                                         )}
-                                        {msg.state === 'confirmed' && (
-                                          <span className="text-green-500 text-xs ml-1" title="Message delivered">✓</span>
+                                        {msg.username === user.username && msg.readAt && (
+                                          <span className="text-blue-400 text-xs ml-1" title="Read">
+                                            ✓✓
+                                          </span>
+                                        )}
+                                        {msg.username === user.username && !msg.readAt && msg.state === 'confirmed' && (
+                                          <span className="text-green-500 text-xs ml-1" title="Delivered">✓</span>
                                         )}
                                         {msg.state === 'pending' && (
                                           <span className="text-yellow-500 text-xs ml-1" title="Sending...">⏳</span>
