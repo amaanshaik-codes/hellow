@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: hellow-socket-server
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: ../
+    plan: free
+    region: oregon
+    branch: main
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        sync: false # This should be set manually in Render dashboard
+    scaling:
+      minInstances: 1
+      maxInstances: 1

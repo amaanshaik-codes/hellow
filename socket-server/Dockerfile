@@ -1,14 +1,29 @@
 FROM node:18-alpine
+
+# Add dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
+
+# Create app directory with proper permissions
 WORKDIR /app
+RUN chown -R node:node /app
 
-# Copy only package files from the socket-server folder first and install
-COPY ./socket-server/package*.json ./
-# `npm ci` requires a lockfile; use npm install and omit dev deps for reproducible install without package-lock
-RUN npm install --omit=dev --no-audit --no-fund
+# Switch to non-root user
+USER node
 
-# Copy the socket-server sources into /app so index.js lives at /app/index.js
-COPY ./socket-server .
+# Copy package files and install dependencies
+COPY --chown=node:node ./socket-server/package*.json ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
-ENV PORT 3001
-EXPOSE 3001
+# Copy application code
+COPY --chown=node:node ./socket-server .
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:'+process.env.PORT+'/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
+
+# Expose port
+EXPOSE $PORT
+
+# Use dumb-init for proper signal handling
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "index.js"]
