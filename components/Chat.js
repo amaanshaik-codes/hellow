@@ -6,6 +6,7 @@ import * as ScrollArea from '@radix-ui/react-scroll-area';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { ExitIcon } from '@radix-ui/react-icons';
 import ThemeToggle from './ThemeToggle';
+import NotificationToast from './NotificationToast';
 import { usePragmaticChat } from '../hooks/usePragmaticChat';
 
 // UUID generation for message deduplication
@@ -18,6 +19,33 @@ function generateUUID() {
 }
 
 export default function Chat({ user, onLogout }) {
+  // Notification state
+  const [toast, setToast] = useState(null);
+  const lastMsgIdRef = useRef(null);
+  // Notification logic: show toast if new peer message arrives and window not focused
+  useEffect(() => {
+    if (!messages.length) return;
+    const last = messages[messages.length - 1];
+    if (lastMsgIdRef.current === last.id) return;
+    lastMsgIdRef.current = last.id;
+    if (last.username !== user.username && !document.hasFocus()) {
+      setToast({
+        title: last.username,
+        body: last.text.length > 120 ? last.text.slice(0, 120) + '…' : last.text
+      });
+      // Optionally, use Web Notifications API
+      if (window.Notification && Notification.permission === 'granted') {
+        new Notification(last.username, { body: last.text });
+      }
+    }
+  }, [messages, user.username]);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if (window.Notification && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
   // Use the pragmatic messaging hook
   const {
     messages,
@@ -532,7 +560,8 @@ export default function Chat({ user, onLogout }) {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
     >
-      <motion.div 
+  <NotificationToast message={toast} onClose={() => setToast(null)} />
+  <motion.div 
         className="chat-card"
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
