@@ -116,59 +116,49 @@ export default function Chat({ user, onLogout }) {
       const root = viewportRef.current;
       if (!root || !sendReadReceipt) return;
       const GN = typeof window !== 'undefined' ? window.__DEBUG_READS : false;
-      const rect = root.getBoundingClientRect();
-      const MIN_VIS = 0.45; // relax threshold for desktop
-      const candidates = Array.from(root.querySelectorAll('[data-owner="peer"][data-mid]'));
-
-      const containerHeight = root.clientHeight;
-      const scrollTop = root.scrollTop;
-
-      candidates.forEach(el => {
-        const mid = el.getAttribute('data-mid');
-        if (!mid || readSentRef.current.has(mid)) return;
-        const m = messages.find(mm => mm.id === mid);
-        if (!m) return;
-        // Method 1: bounding rect intersection (works across layouts)
-        const r = el.getBoundingClientRect();
-        const h1 = r.height || 1;
-        const vis1 = Math.min(rect.bottom, r.bottom) - Math.max(rect.top, r.top);
-        const ratio1 = vis1 / h1;
-        // Method 2: offset math relative to scroll container (more reliable for desktop scrollbars)
-        // We accumulate offsetTop relative to root
-        let off = 0; let node = el; while (node && node !== root) { off += node.offsetTop; node = node.offsetParent; }
-        const elTopRel = off - scrollTop;
-        const elBottomRel = elTopRel + el.offsetHeight;
-        const clippedTop = Math.max(0, elTopRel);
-        const clippedBottom = Math.min(containerHeight, elBottomRel);
-        const vis2 = clippedBottom - clippedTop;
-        const ratio2 = vis2 / (el.offsetHeight || 1);
-        const ratio = Math.max(ratio1, ratio2);
-        if (GN) console.log('[READ-CHECK]', { mid, ratio1: ratio1.toFixed(2), ratio2: ratio2.toFixed(2), used: ratio.toFixed(2) });
-        if (ratio >= MIN_VIS) {
-          readSentRef.current.add(mid);
-          sendReadReceipt(m);
-        }
-      });
-
-      // Fallback: if user is near bottom, mark last 10 peer messages as read
+      const peers = Array.from(root.querySelectorAll('[data-owner="peer"][data-mid]'));
       const nearBottom = (root.scrollHeight - (root.scrollTop + root.clientHeight)) < 40;
       if (nearBottom) {
-        const tailPeers = candidates.slice(-10);
-        tailPeers.forEach(el => {
+        peers.slice(-12).forEach(el => {
           const mid = el.getAttribute('data-mid');
           if (!mid || readSentRef.current.has(mid)) return;
           const m = messages.find(mm => mm.id === mid);
           if (m) {
             readSentRef.current.add(mid);
             sendReadReceipt(m);
-            if (GN) console.log('[READ-FALLBACK]', mid);
+            if (GN) console.log('[READ-FALLBACK-NB]', mid);
           }
         });
       }
-    } catch (e) {
-      // noop
-    }
+    } catch (_) {}
   }, [messages, sendReadReceipt]);
+
+  // IntersectionObserver visibility approach (scoped to peer bubbles only)
+  useEffect(() => {
+    const root = viewportRef.current;
+    if (!root || !sendReadReceipt) return;
+    const GN = typeof window !== 'undefined' ? window.__DEBUG_READS : false;
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.intersectionRatio >= 0.5) {
+          const el = entry.target;
+          const mid = el.getAttribute('data-mid');
+          if (!mid || readSentRef.current.has(mid)) return;
+          const m = messages.find(mm => mm.id === mid);
+          if (m) {
+            readSentRef.current.add(mid);
+            sendReadReceipt(m);
+            if (GN) console.log('[READ-IO]', mid);
+          }
+        }
+      });
+    }, { root, threshold: [0.5] });
+    const peers = Array.from(root.querySelectorAll('[data-owner="peer"][data-mid]'));
+    peers.forEach(p => io.observe(p));
+    // initial near-bottom pass
+    markVisibleUnread();
+    return () => io.disconnect();
+  }, [messages, sendReadReceipt, markVisibleUnread]);
 
   // Extra triggers specifically helpful for desktop focus/resize
   useEffect(() => {
@@ -560,6 +550,7 @@ export default function Chat({ user, onLogout }) {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
     >
+  <div aria-live="polite" aria-atomic="true" style={{position:'absolute',width:1,height:1,overflow:'hidden',clip:'rect(0 0 0 0)'}} id="chat-aria-live" />
   <NotificationToast message={toast} onClose={() => setToast(null)} />
   <motion.div 
         className="chat-card"
@@ -738,12 +729,12 @@ export default function Chat({ user, onLogout }) {
                                           <span className="text-system-secondaryLabel text-xs">(edited)</span>
                                         )}
                                         {msg.username === user.username && msg.readAt && (
-                                          <span className="text-blue-400 text-xs ml-1" title="Read">
+                                          <span className="text-blue-400 text-xs ml-1" title="Read (peer opened)">
                                             ✓✓
                                           </span>
                                         )}
                                         {msg.username === user.username && !msg.readAt && msg.state === 'confirmed' && (
-                                          <span className="text-green-500 text-xs ml-1" title="Delivered">✓</span>
+                                          <span className="text-green-500 text-xs ml-1" title="Delivered (not yet read)">✓</span>
                                         )}
                                         {msg.state === 'pending' && (
                                           <span className="text-yellow-500 text-xs ml-1" title="Sending...">⏳</span>
@@ -947,9 +938,10 @@ export default function Chat({ user, onLogout }) {
           const mine = [...messages].filter(m => m.username === user.username);
           if (!mine.length) return null;
           const last = mine[mine.length - 1];
+          const statusText = last.readAt ? 'Read' : last.state === 'confirmed' ? 'Delivered' : last.state === 'failed' ? 'Failed to send' : 'Sending…';
           return (
-            <div className="text-[11px] px-4 py-1 text-system-secondaryLabel text-right" aria-live="polite">
-              {last.readAt ? 'Read' : last.state === 'confirmed' ? 'Delivered' : last.state === 'failed' ? 'Failed to send' : 'Sending…'}
+            <div className="text-[11px] px-4 py-1 text-system-secondaryLabel text-right" aria-live="polite" aria-label={`Last message status: ${statusText}`}>
+              {statusText}
             </div>
           );
         })()}

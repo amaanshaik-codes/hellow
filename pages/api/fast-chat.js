@@ -61,11 +61,11 @@ export default async function handler(req, res) {
       case 'presence_sync':
         return await handlePresenceSync(res, safeRoom);
       case 'receipt':
-        return await handleReceipt(res, safeRoom, username, req.body.messageId, req.body.messageTimestamp);
+    return await handleReceipt(res, safeRoom, username, req.body.messageId, req.body.messageTimestamp);
       case 'receipt_batch':
-        return await handleReceiptBatch(res, safeRoom, username, req.body.messageIds);
+    return await handleReceiptBatch(res, safeRoom, username, req.body.messageIds);
       case 'reads_sync':
-        return await handleReadsSync(res, safeRoom, username, req.body.peer);
+    return await handleReadsSync(res, safeRoom, username, req.body.peer);
       default:
         return res.status(400).json({ error: 'Unknown action' });
     }
@@ -270,6 +270,12 @@ async function handlePresenceSync(res, room) {
 async function handleReceipt(res, room, username, messageId, messageTimestamp) {
   if (!messageId) return res.status(400).json({ error: 'messageId required' });
   try {
+    // Validate that message exists in room (integrity hardening)
+    const roomMessages = await kv.get(`room_messages_${room}`) || [];
+    const exists = roomMessages.some(m => m.id === messageId);
+    if (!exists) {
+      return res.status(404).json({ error: 'Message not found for receipt' });
+    }
     await persistReads(room, username, [messageId]);
     const payload = {
       type: 'receipt',
@@ -288,9 +294,14 @@ async function handleReceipt(res, room, username, messageId, messageTimestamp) {
 async function handleReceiptBatch(res, room, username, messageIds = []) {
   if (!Array.isArray(messageIds) || !messageIds.length) return res.status(400).json({ error: 'messageIds required' });
   try {
-    await persistReads(room, username, messageIds);
+    // Validate each message id; only broadcast valid ones
+    const roomMessages = await kv.get(`room_messages_${room}`) || [];
+    const validSet = new Set(roomMessages.map(m => m.id));
+    const filtered = messageIds.filter(id => validSet.has(id));
+    if (!filtered.length) return res.status(404).json({ error: 'No valid messageIds' });
+    await persistReads(room, username, filtered);
     const baseTs = Date.now();
-    messageIds.forEach((id, idx) => {
+    filtered.forEach((id, idx) => {
       broadcastToRoom(room, {
         type: 'receipt',
         messageId: id,
@@ -298,7 +309,7 @@ async function handleReceiptBatch(res, room, username, messageIds = []) {
         timestamp: baseTs + idx
       }, 'receipt');
     });
-    return res.status(200).json({ success: true, count: messageIds.length });
+    return res.status(200).json({ success: true, count: filtered.length });
   } catch (e) {
     return res.status(500).json({ error: 'Failed batch receipt' });
   }
@@ -306,9 +317,10 @@ async function handleReceiptBatch(res, room, username, messageIds = []) {
 
 async function handleReadsSync(res, room, username, peer) {
   try {
-    const key = getReadsKey(room, peer || username, peer ? peer : username);
+    const target = peer || username;
+    const key = getReadsKey(room, target);
     const reads = await kv.get(key) || [];
-    return res.status(200).json({ success: true, reads });
+    return res.status(200).json({ success: true, reads, target });
   } catch (e) {
     return res.status(500).json({ error: 'Failed reads sync' });
   }

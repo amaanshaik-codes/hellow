@@ -74,10 +74,19 @@ export function usePragmaticChat(username, jwtToken) {
 
     // Receipts
     const unsubscribeReceipts = messaging.onReceipt((data) => {
-  const ts = data.read || Date.now();
-  setReceipts(prev => ({ ...prev, [data.messageId]: { ...prev[data.messageId], read: ts } }));
-  // Only add readAt if the message belongs to current user (outgoing)
-  setMessages(prev => prev.map(m => m.id === data.messageId && m.username === username ? { ...m, readAt: ts } : m));
+      // data: { messageId, readers, reader }
+      const readers = data.readers || {};
+      const myReadTs = readers[username];
+      if (myReadTs) {
+        setReceipts(prev => ({ ...prev, [data.messageId]: { ...prev[data.messageId], self: myReadTs } }));
+      }
+      // Peer read timestamp for outgoing message
+      Object.entries(readers).forEach(([r, ts]) => {
+        if (r !== username) {
+          setReceipts(prev => ({ ...prev, [data.messageId]: { ...(prev[data.messageId]||{}), [r]: ts } }));
+          setMessages(prev => prev.map(m => m.id === data.messageId && m.username === username ? { ...m, readAt: ts } : m));
+        }
+      });
     });
 
     // Stats monitoring
