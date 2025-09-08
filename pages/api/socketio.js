@@ -37,13 +37,26 @@ async function updatePresenceInKV(room, username, isOnline) {
 }
 
 export default async function handler(req, res) {
+  // Explicit CORS handling for cross-origin socket.io polling / handshake
+  try {
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+  } catch (e) {}
   // Only initialize the Socket.io server once and attach to the underlying HTTP server
   if (!res.socket.server.io) {
     console.log('🔌 Initializing Socket.io server...');
     const io = new Server(res.socket.server, {
       path: '/api/socketio',
       cors: {
-        origin: '*'
+        origin: (origin, cb) => cb(null, true),
+        credentials: true
       }
     });
 
